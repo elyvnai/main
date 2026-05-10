@@ -1,88 +1,65 @@
 const express = require('express');
 const router = express.Router();
-const Call = require('../../models/Call');
 const Client = require('../../models/Client');
 const Message = require('../../models/Message');
 const SmsOptOut = require('../../models/SmsOptOut');
 const TwilioService = require('../../services/TwilioService');
-const SpeedToLeadService = require('../../services/SpeedToLeadService');
 const TelegramService = require('../../services/TelegramService');
 
-router.post('/call-status', express.urlencoded({ extended: false }), (req, res) => {
+router.post('/', async (req, res) => {
     try {
-        const { CallSid, CallStatus, From, To, CallDuration, CallSegment } = req.body;
-        if (!CallSid) return res.status(400).json({ error: 'Missing CallSid' });
-        let phone = TwilioService.normalizePhoneNumber(From || To);
-        let existingCall = Call.findByCallId(CallSid);
-        if (!existingCall) {
+        const { MessageSid, From, Body, MessageStatus } = req.body;
+
+        if (MessageSid && Body) {
+            const phone = TwilioService.normalizePhoneNumber(From);
+            const body = Body.trim().toUpperCase();
+
+            if (['STOP', 'UNSUBSCRIBE', 'CANCEL'].includes(body)) {
+                SmsOptOut.create({ phone_number: phone, reason: 'STOP', source: 'reply_stop' });
+            } else if (['START', 'YES'].includes(body)) {
+                SmsOptOut.remove(phone);
+            }
+
             let client = Client.findByPhone(phone);
             if (!client) {
-                client = Client.create({ phone_number: phone, source: 'twilio' });
+                client = Client.create({ phone_number: phone, source: 'inbound_sms' });
             }
-            existingCall = Call.create({
-                call_id: CallSid,
-                client_id: client.id,
-                direction: CallSegment === '1' ? 'inbound' : 'outbound',
-                status: CallStatus,
-                duration: CallDuration ? parseInt(CallDuration) : 0,
-                started_at: new Date().toISOString()
-            });
-        } else {
-            Call.update(existingCall.id, {
-                status: CallStatus,
-                duration: CallDuration ? parseInt(CallDuration) : existingCall.duration,
-                ended_at: new Date().toISOString()
-            });
-        }
-        if (CallStatus === 'completed' || CallStatus === 'no-answer' || CallStatus === 'busy' || CallStatus === 'failed') {
-            const callData = {
-                callId: CallSid,
-                phoneNumber: phone,
-                direction: CallSegment === '1' ? 'inbound' : 'outbound',
-                duration: CallDuration ? parseInt(CallDuration) : 0,
-                disconnectReason: CallStatus
-            };
-            if (SpeedToLeadService.shouldSendSpeedToLead(callData)) {
-                SpeedToLeadService.handleMissedCall(callData).catch(err => console.error('SpeedToLead error:', err));
-            }
-        }
-        res.status(200).send();
-    } catch (error) {
-        console.error('❌ Twilio call-status error:', error);
-        res.status(500).json({ error: 'Internal error' });
-    }
-});
 
-router.post('/incoming-sms', express.urlencoded({ extended: false }), async (req, res) => {
-    try {
-        const { From, To, Body, MessageSid } = req.body;
-        if (!From || !Body) return res.status(400).json({ error: 'Missing From or Body' });
-        const phone = TwilioService.normalizePhoneNumber(From);
-        const body = Body.trim().toUpperCase();
-        if (body === 'STOP' || body === 'UNSUBSCRIBE' || body === 'CANCEL' || body === 'REMOVE') {
-            SmsOptOut.add(phone, 'Keyword opt-out', 'twilio_incoming');
-            return res.status(200).send();
+            if (body === 'URGENT') {
+                const Lead = require('../../models/Lead');
+                let lead = Lead.findByClientId(client.id);
+                if (lead) {
+                    Lead.update(lead.id, { priority: 10, notes: (lead.notes ? lead.notes + '\n' : '') + 'Client replied URGENT' });
+                } else {
+                    Lead.create({ client_id: client.id, status: 'new', priority: 10, notes: 'Client replied URGENT' });
+                }
+                await TelegramService.sendMessage(`🚨 🚨 🚨 <b>URGENT REPLY</b> from <b>${phone}</b>\n\n<i>Client has requested immediate attention.</i>`);
+                await TwilioService.sendSMS(phone, "We have received your URGENT request. A team member will prioritize your call and contact you shortly.");
+            } else if (body === 'CALLBACK') {
+                await TelegramService.sendMessage(`📞 <b>CALLBACK REQUESTED</b> from <b>${phone}</b>`);
+                await TwilioService.sendSMS(phone, "Thanks! We've scheduled a callback for you. A team member will call you as soon as possible.");
+            }
+
+            const message = Message.create({
+                client_id: client.id,
+                direction: 'inbound',
+                content: Body,
+                status: 'delivered',
+                twilio_sid: MessageSid
+            });
+
+            await TelegramService.sendSMSNotification(message, client);
+        } else if (MessageSid && MessageStatus) {
+            const message = Message.findByTwilioSid(MessageSid);
+            if (message) {
+                Message.update(message.id, { status: MessageStatus });
+            }
         }
-        let client = Client.findByPhone(phone);
-        if (!client) {
-            client = Client.create({ phone_number: phone, source: 'sms_reply' });
-        }
-        Message.create({
-            client_id: client.id,
-            direction: 'inbound',
-            content: Body,
-            status: 'received',
-            twilio_sid: MessageSid
-        });
-        if (body === 'CALLBACK') {
-            await TelegramService.sendMessage(`📞 <b>Callback Requested</b>\nFrom: ${phone}`);
-        } else if (body === 'URGENT') {
-            await TelegramService.sendMessage(`🚨 <b>URGENT Priority Lead</b>\nFrom: ${phone}`);
-        }
-        res.status(200).send();
+
+        res.status(200).send('OK');
     } catch (error) {
-        console.error('❌ Twilio incoming-sms error:', error);
-        res.status(500).json({ error: 'Internal error' });
+        console.error('❌ Twilio error:', error);
+        res.status(500).send('Error');
     }
 });
 

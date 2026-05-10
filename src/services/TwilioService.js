@@ -1,4 +1,5 @@
 const twilio = require('twilio');
+
 class TwilioService {
     constructor() {
         this.accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -6,23 +7,27 @@ class TwilioService {
         this.phoneNumber = process.env.TWILIO_PHONE_NUMBER;
         this._client = null;
     }
+
     get client() {
         if (!this._client && this.accountSid && this.authToken) {
             this._client = twilio(this.accountSid, this.authToken);
         }
         return this._client;
     }
+
     async sendSMS(to, body) {
         if (!this.client) {
             console.warn('⚠️ Twilio client not configured, SMS not sent');
             return { success: false, error: 'Twilio not configured' };
         }
+
         try {
             const message = await this.client.messages.create({
                 body: body,
                 from: this.phoneNumber,
                 to: to
             });
+
             console.log(`📤 SMS sent to ${to}: ${message.sid}`);
             return {
                 success: true,
@@ -37,14 +42,25 @@ class TwilioService {
             };
         }
     }
+
     async sendFullMenuSMS(to) {
         const businessName = process.env.BUSINESS_NAME || 'Elyvn';
         const bookingLink = process.env.BOOKING_LINK || 'N/A';
         const businessHours = process.env.BUSINESS_HOURS || 'N/A';
         const callbackNumber = this.phoneNumber;
-        const body = `Hi, this is ${businessName}. Sorry we missed your call. How can we help?\n1. Book an appointment: ${bookingLink}\n2. Request a callback: Reply 'CALLBACK'\n3. Our hours: ${businessHours}\n4. URGENT: Reply 'URGENT' to be prioritized.\nCall us back at ${callbackNumber}.`;
+
+        const body = `Hi, this is ${businessName}. Sorry we missed your call. How can we help? 
+
+1. Book an appointment: ${bookingLink} 
+2. Request a callback: Reply 'CALLBACK' 
+3. Our hours: ${businessHours} 
+4. URGENT: Reply 'URGENT' to be prioritized. 
+
+Call us back at ${callbackNumber}.`;
+
         return this.sendSMS(to, body);
     }
+
     normalizePhoneNumber(phone) {
         if (!phone) return null;
         let normalized = phone.replace(/[^\d+]/g, '');
@@ -58,4 +74,5 @@ class TwilioService {
         return normalized;
     }
 }
+
 module.exports = new TwilioService();

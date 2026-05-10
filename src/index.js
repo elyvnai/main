@@ -1,31 +1,41 @@
 require('dotenv').config();
-const http = require('http');
 const express = require('express');
-const cors = require('cors');
 const helmet = require('helmet');
+const cors = require('cors');
 const compression = require('compression');
-const { initDatabase, getDatabase } = require('./database');
-const TelegramService = require('./services/TelegramService');
-const twilioWebhook = require('./routes/webhooks/twilio');
+const http = require('http');
+
+const { initDatabase } = require('./database/init');
 const retellWebhook = require('./routes/webhooks/retell');
+const twilioWebhook = require('./routes/webhooks/twilio');
 const telegramWebhook = require('./routes/webhooks/telegram');
-const Call = require('./models/Call');
+const TelegramService = require('./services/TelegramService');
+
 const app = express();
+const PORT = process.env.PORT || 3000;
+
 app.use(helmet());
 app.use(cors());
 app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Log requests
+app.use((req, res, next) => {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] ${req.method} ${req.path}`);
+    next();
+});
+
+// Health check
 app.get('/health', (req, res) => {
     try {
-        const db = getDatabase();
-        db.exec('SELECT 1');
+        const { get } = require('./database');
+        get('SELECT 1', []);
         res.json({
-            status: 'ok',
-            app: 'Elyvn',
+            status: 'healthy',
             database: 'connected',
-            uptime: process.uptime()
+            timestamp: new Date().toISOString()
         });
     } catch (error) {
         res.status(503).json({
@@ -33,20 +43,6 @@ app.get('/health', (req, res) => {
             database: 'disconnected',
             error: error.message
         });
-    }
-});
-
-app.get('/health/live', (req, res) => {
-    res.json({ status: 'ok' });
-});
-
-app.get('/health/ready', (req, res) => {
-    try {
-        const db = getDatabase();
-        db.exec('SELECT 1');
-        res.json({ status: 'ready' });
-    } catch {
-        res.status(503).json({ status: 'not ready' });
     }
 });
 
@@ -70,8 +66,9 @@ app.use((err, req, res, next) => {
 async function startServer() {
     try {
         await initDatabase();
-        const PORT = process.env.PORT || 3000;
+        
         const server = http.createServer(app);
+        
         server.listen(PORT, () => {
             console.log(`
 ╔═══════════════════════════════════════════════════════════╗
@@ -99,6 +96,7 @@ async function startServer() {
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
             `);
+
             const chatId = process.env.TELEGRAM_CHAT_ID;
             if (chatId) {
                 TelegramService.sendToAdmin(`
@@ -108,10 +106,12 @@ async function startServer() {
                 `).catch(err => console.warn('Could not send startup notification:', err.message));
             }
         });
+
         server.on('error', (err) => {
             console.error('❌ Server error:', err);
             process.exit(1);
         });
+
     } catch (error) {
         console.error('❌ Failed to start server:', error);
         process.exit(1);
