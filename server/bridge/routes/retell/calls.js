@@ -11,19 +11,25 @@ const https = require('https');
 const RECORDINGS_DIR = path.join(process.cwd(), 'recordings');
 if (!fs.existsSync(RECORDINGS_DIR)) fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
 
+function isOptedOut(phone, clientId) {
+  const db = getDb();
+  const row = db.prepare('SELECT 1 FROM sms_opt_outs WHERE phone = ? AND client_id = ?').get(phone, clientId);
+  return !!row;
+}
+
 async function handleCallStarted(callData) {
   const parsed = RetellService.parseCallEvent({ call: callData });
   const db = getDb();
-  
   const client = db.prepare('SELECT * FROM clients WHERE retell_agent_id = ?').get(parsed.agentId);
-  
+  if (!client) return;
+
   db.prepare(`
     INSERT INTO calls (id, call_id, client_id, caller_phone, status, duration, created_at)
     VALUES (?, ?, ?, ?, 'in_progress', 0, ?)
     ON CONFLICT(call_id) DO NOTHING
-  `).run(randomUUID(), parsed.callId, client?.id, parsed.phoneNumber, new Date().toISOString());
+  `).run(randomUUID(), parsed.callId, client.id, parsed.phoneNumber, new Date().toISOString());
 
-  if (client?.telegram_chat_id) {
+  if (client.telegram_chat_id && client.ai_enabled) {
     await TelegramService.sendCallNotification(
       { call_id: parsed.callId, caller_phone: parsed.phoneNumber, status: 'in_progress' },
       client,
@@ -36,6 +42,7 @@ async function handleCallEnded(callData) {
   const parsed = RetellService.parseCallEvent({ call: callData });
   const db = getDb();
   const client = db.prepare('SELECT * FROM clients WHERE retell_agent_id = ?').get(parsed.agentId);
+  if (!client) return;
 
   const isMissed = SpeedToLeadService.shouldSendSpeedToLead(parsed);
   const status = isMissed ? 'missed' : 'completed';
@@ -52,24 +59,23 @@ async function handleCallEnded(callData) {
       recording_url = excluded.recording_url,
       disconnection_reason = excluded.disconnection_reason
   `).run(
-    randomUUID(), parsed.callId, client?.id, parsed.phoneNumber, status,
+    randomUUID(), parsed.callId, client.id, parsed.phoneNumber, status,
     parsed.duration, parsed.transcript, parsed.summary,
     parsed.summary ? 'completed' : status,
     parsed.recordingUrl, parsed.disconnectReason,
     new Date().toISOString()
   );
 
-  // Download recording
   let recordingPath = null;
   if (parsed.recordingUrl) {
     recordingPath = await downloadRecording(parsed.callId, parsed.recordingUrl);
     if (recordingPath) {
-      db.prepare('UPDATE calls SET recording_path = ? WHERE call_id = ?').run(recordingPath, parsed.callId);
+      db.prepare('UPDATE calls SET recording_path = ? WHERE call_id = ? AND client_id = ?')
+        .run(recordingPath, parsed.callId, client.id);
     }
   }
 
-  // Notify owner
-  if (client?.telegram_chat_id) {
+  if (client.telegram_chat_id && client.ai_enabled) {
     await TelegramService.sendCallNotification({
       call_id: parsed.callId,
       caller_phone: parsed.phoneNumber,
@@ -82,23 +88,27 @@ async function handleCallEnded(callData) {
     }, client, 'ended');
   }
 
-  // Speed-to-lead for missed calls
-  if (isMissed && parsed.phoneNumber) {
+  // Speed-to-lead with opt-out check
+  if (isMissed && parsed.phoneNumber && !isOptedOut(parsed.phoneNumber, client.id)) {
     await TwilioService.sendFullMenuSMS(parsed.phoneNumber);
-    await TelegramService.sendMessage(
-      `\ud83d\udcf4 <b>Missed call from ${parsed.phoneNumber}</b>\n\u23f1\ufe0f ${parsed.duration}s\n\ud83d\udce4 Auto-text sent with booking link.`,
-      { chat_id: client?.telegram_chat_id }
-    );
+    if (client.telegram_chat_id && client.ai_enabled) {
+      await TelegramService.sendMessage(
+        `📵 <b>Missed call from ${parsed.phoneNumber}</b>\n⏱ ${parsed.duration}s\n📤 Auto-text sent with booking link.`,
+        { chat_id: client.telegram_chat_id }
+      );
+    }
   }
 }
 
 async function handleCallAnalyzed(callData) {
   const parsed = RetellService.parseCallEvent({ call: callData });
   const db = getDb();
-  
+  const client = db.prepare('SELECT * FROM clients WHERE retell_agent_id = ?').get(parsed.agentId);
+  if (!client) return;
+
   db.prepare(`
-    UPDATE calls SET transcript = ?, summary = ?, outcome = ? WHERE call_id = ?
-  `).run(parsed.transcript, parsed.summary, parsed.summary ? 'completed' : 'analyzed', parsed.callId);
+    UPDATE calls SET transcript = ?, summary = ?, outcome = ? WHERE call_id = ? AND client_id = ?
+  `).run(parsed.transcript, parsed.summary, parsed.summary ? 'completed' : 'analyzed', parsed.callId, client.id);
 }
 
 function downloadRecording(callId, url) {
