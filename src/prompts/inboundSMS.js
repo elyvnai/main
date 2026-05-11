@@ -13,3 +13,5 @@ function formatInboundSMS(message, client) {
   
   return { text, buttons };
 }
+
+module.exports = { formatInboundSMS };

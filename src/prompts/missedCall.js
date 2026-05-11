@@ -15,3 +15,5 @@ function formatMissedCall(call, client) {
   
   return { text, buttons };
 }
+
+module.exports = { formatMissedCall };

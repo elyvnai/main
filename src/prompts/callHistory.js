@@ -24,3 +24,5 @@ function formatCallHistory(calls, client) {
   
   return { text, buttons };
 }
+
+module.exports = { formatCallHistory };
