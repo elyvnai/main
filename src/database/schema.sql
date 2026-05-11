@@ -1,73 +1,86 @@
--- Elyvn SQLite Schema
+-- Elyvn Updated Database Schema
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS clients (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    phone_number TEXT UNIQUE NOT NULL,
-    first_name TEXT,
-    last_name TEXT,
-    email TEXT,
-    source TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  id TEXT PRIMARY KEY,
+  business_name TEXT NOT NULL,
+  phone_number TEXT UNIQUE,
+  retell_agent_id TEXT,
+  transfer_phone TEXT,
+  telegram_chat_id TEXT,
+  calcom_booking_link TEXT,
+  calcom_api_key_encrypted TEXT,
+  calcom_event_type_id TEXT,
+  timezone TEXT DEFAULT 'UTC',
+  ai_enabled INTEGER DEFAULT 1,
+  business_hours TEXT DEFAULT 'Mon-Fri 9AM-6PM',
+  created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 
 CREATE TABLE IF NOT EXISTS calls (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    call_id TEXT UNIQUE NOT NULL,
-    client_id INTEGER,
-    direction TEXT,
-    status TEXT,
-    duration INTEGER DEFAULT 0,
-    recording_url TEXT,
-    transcript TEXT,
-    call_summary TEXT,
-    outcome TEXT,
-    disconnect_reason TEXT,
-    sms_sent INTEGER DEFAULT 0,
-    started_at DATETIME,
-    ended_at DATETIME,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (client_id) REFERENCES clients(id)
-);
-
-CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    client_id INTEGER,
-    direction TEXT,
-    content TEXT,
-    status TEXT,
-    twilio_sid TEXT,
-    retell_call_id TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (client_id) REFERENCES clients(id)
+  id TEXT PRIMARY KEY,
+  call_id TEXT UNIQUE,
+  twilio_call_sid TEXT,
+  client_id TEXT NOT NULL,
+  caller_phone TEXT,
+  direction TEXT DEFAULT 'inbound',
+  status TEXT,
+  duration INTEGER,
+  transcript TEXT,
+  summary TEXT,
+  outcome TEXT,
+  recording_url TEXT,
+  recording_path TEXT,
+  disconnection_reason TEXT,
+  created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 
 CREATE TABLE IF NOT EXISTS leads (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    client_id INTEGER,
-    status TEXT DEFAULT 'new',
-    priority INTEGER DEFAULT 0,
-    notes TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (client_id) REFERENCES clients(id)
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL,
+  name TEXT,
+  phone TEXT NOT NULL,
+  email TEXT,
+  source TEXT DEFAULT 'call',
+  stage TEXT DEFAULT 'new',
+  last_contact TEXT,
+  created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+  updated_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+  UNIQUE(client_id, phone)
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL,
+  lead_id TEXT,
+  phone TEXT,
+  direction TEXT,
+  body TEXT,
+  status TEXT DEFAULT 'sent',
+  message_sid TEXT,
+  created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 
 CREATE TABLE IF NOT EXISTS appointments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    client_id INTEGER,
-    title TEXT,
-    scheduled_at DATETIME,
-    duration_minutes INTEGER DEFAULT 30,
-    status TEXT DEFAULT 'scheduled',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (client_id) REFERENCES clients(id)
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL,
+  lead_id TEXT,
+  phone TEXT,
+  name TEXT,
+  datetime TEXT,
+  status TEXT DEFAULT 'confirmed',
+  calcom_booking_id TEXT,
+  created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 
 CREATE TABLE IF NOT EXISTS sms_opt_outs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    phone_number TEXT UNIQUE NOT NULL,
-    opted_out_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    reason TEXT,
-    source TEXT
+  phone TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  opted_out_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+  UNIQUE(phone, client_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_calls_client_id ON calls(client_id);
+CREATE INDEX IF NOT EXISTS idx_calls_call_id ON calls(call_id);
+CREATE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone);
+CREATE INDEX IF NOT EXISTS idx_messages_client_phone ON messages(client_id, phone);
