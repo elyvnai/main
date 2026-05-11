@@ -1,12 +1,10 @@
-// server/bridge/routes/telegram/index.js
-// Telegram bot webhook — commands, callbacks, reply-to-message (two-way SMS)
-
 const express = require('express');
 const { handleCommand } = require('./commands');
 const { handleCallback } = require('./callbacks');
 const { getDb } = require('../../utils/dbAdapter');
-const { sendMessage: sendTelegram } = require('../../utils/telegram');
-const { sendSMS } = require('../../utils/sms');
+const TelegramService = require('../../services/TelegramService');
+const TwilioService = require('../../services/TwilioService');
+const fetch = require('node-fetch');
 
 const router = express.Router();
 
@@ -14,56 +12,65 @@ router.post('/', async (req, res) => {
   const { message, callback_query } = req.body;
 
   try {
-    // ─── Commands & Reply-to-message ─────────────────────
+    // Commands & Reply-to-message
     if (message) {
       const db = getDb();
       const text = message.text || '';
-      const chatId = message.chat.id;
+      const chatId = message.chat.id.toString();
 
-      // Reply-to-message = two-way SMS back to customer
+      // Reply-to-message = two-way SMS
       if (message.reply_to_message && text) {
         const client = db.prepare('SELECT * FROM clients WHERE telegram_chat_id = ?').get(chatId);
         if (client) {
           const repliedText = message.reply_to_message.text || '';
           const phoneMatch = repliedText.match(/\+?\d{10,15}/);
           if (phoneMatch) {
-            await sendSMS(phoneMatch[0], text, client.phone_number, db, client.id);
-            await sendTelegram(chatId, `✉️ Sent to ${phoneMatch[0]}:\n"${text}"`);
+            const phone = TwilioService.normalizePhoneNumber(phoneMatch[0]);
+            await TwilioService.sendSMS(phone, text);
+            await TelegramService.sendMessage(`✉️ Sent to ${phone}:\n"${text}"`, { chat_id: chatId });
           } else {
-            await sendTelegram(chatId, 'Could not find a phone number in the replied message.');
+            await TelegramService.sendMessage('Could not find a phone number to reply to.', { chat_id: chatId });
           }
         }
         return res.status(200).send('OK');
       }
 
-      // Bot commands
+      // Commands
       const result = await handleCommand(db, chatId, text, message.from?.first_name, message.from?.username);
 
       if (typeof result === 'string') {
-        await sendTelegram(chatId, result);
+        await TelegramService.sendMessage(result, { chat_id: chatId });
       } else if (result && result.text) {
-        await sendTelegram(chatId, result.text, result.buttons ? {
-          reply_markup: { inline_keyboard: result.buttons }
-        } : {});
+        await TelegramService.sendMessage(result.text, {
+          chat_id: chatId,
+          reply_markup: result.buttons ? { inline_keyboard: result.buttons } : undefined
+        });
       }
     }
 
-    // ─── Inline button callbacks ──────────────────────────
+    // Inline button callbacks
     if (callback_query) {
       const db = getDb();
-      const chatId = callback_query.message?.chat?.id;
+      const chatId = callback_query.message?.chat?.id?.toString();
       const data = callback_query.data;
+
+      // Answer callback query to remove loading spinner
+      await fetch(`${TelegramService.apiUrl}/answerCallbackQuery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callback_query_id: callback_query.id })
+      });
 
       const result = await handleCallback(db, chatId, data, callback_query.message?.message_id);
       if (result) {
-        await sendTelegram(chatId, result);
+        await TelegramService.sendMessage(result, { chat_id: chatId });
       }
     }
 
     res.status(200).send('OK');
   } catch (err) {
     console.error('[Telegram] Webhook error:', err);
-    res.status(200).send('OK'); // Always 200 to Telegram to prevent retries
+    res.status(200).send('OK');
   }
 });
 
