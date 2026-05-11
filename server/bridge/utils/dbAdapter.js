@@ -1,28 +1,30 @@
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
+const { Pool } = require('pg');
 
-const DB_PATH = process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'elyvn.db');
-
-let db = null;
+let pool = null;
 
 function getDb() {
-  if (!db) {
-    const dir = path.dirname(DB_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
-    console.log(`[DB] Connected: ${DB_PATH}`);
+  if (!pool) {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    });
+    
+    pool.on('error', (err) => {
+      console.error('[DB] Unexpected error on idle client', err);
+    });
+
+    console.log('[DB] Connection pool initialized');
   }
-  return db;
+  return pool;
 }
 
-function closeDb() {
-  if (db) {
-    db.close();
-    db = null;
+async function closeDb() {
+  if (pool) {
+    await pool.end();
+    pool = null;
   }
 }
 

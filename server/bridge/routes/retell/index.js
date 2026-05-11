@@ -12,11 +12,11 @@ router.post('/', async (req, res) => {
   const idempotencyKey = `${event}-${call?.call_id}`;
   
   const db = getDb();
-  const exists = db.prepare('SELECT 1 FROM webhook_events WHERE idempotency_key = ?').get(idempotencyKey);
-  if (exists) return;
+  const { rows } = await db.query('SELECT 1 FROM webhook_events WHERE idempotency_key = $1', [idempotencyKey]);
+  if (rows.length > 0) return;
 
-  db.prepare('INSERT INTO webhook_events (id, idempotency_key, source, payload) VALUES (?, ?, ?, ?)')
-    .run(randomUUID(), idempotencyKey, 'retell', JSON.stringify(req.body));
+  await db.query('INSERT INTO webhook_events (id, idempotency_key, source, payload) VALUES ($1, $2, $3, $4)', 
+    [randomUUID(), idempotencyKey, 'retell', JSON.stringify(req.body)]);
 
   await webhookQueue.add('retell-webhook', {
     source: 'retell',
@@ -34,11 +34,11 @@ router.post('/tools', async (req, res) => {
     const db = getDb();
     const idempotencyKey = tool_call_id;
     if (idempotencyKey) {
-      const exists = db.prepare('SELECT 1 FROM webhook_events WHERE idempotency_key = ?').get(idempotencyKey);
-      if (exists) return res.status(200).json({ success: true, tool_call_id, result: "Already processed" });
+      const { rows } = await db.query('SELECT 1 FROM webhook_events WHERE idempotency_key = $1', [idempotencyKey]);
+      if (rows.length > 0) return res.status(200).json({ success: true, tool_call_id, result: "Already processed" });
 
-      db.prepare('INSERT INTO webhook_events (id, idempotency_key, source, payload) VALUES (?, ?, ?, ?)')
-        .run(randomUUID(), idempotencyKey, 'retell_tool', JSON.stringify(req.body));
+      await db.query('INSERT INTO webhook_events (id, idempotency_key, source, payload) VALUES ($1, $2, $3, $4)', 
+        [randomUUID(), idempotencyKey, 'retell_tool', JSON.stringify(req.body)]);
     }
 
     if (interaction_type !== 'tool_call') {
@@ -53,12 +53,19 @@ router.post('/tools', async (req, res) => {
     }
 
     // Try to find call + client from DB first
-    let call = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(call_id);
-    let client = call ? db.prepare('SELECT * FROM clients WHERE id = ?').get(call.client_id) : null;
+    const { rows: calls } = await db.query('SELECT * FROM calls WHERE call_id = $1', [call_id]);
+    const call = calls[0];
+    let client = null;
+    
+    if (call) {
+      const { rows: clients } = await db.query('SELECT * FROM clients WHERE id = $1', [call.client_id]);
+      client = clients[0];
+    }
     
     // Fallback: look up client by retell_agent_id from the request
     if (!client && agent_id) {
-      client = db.prepare('SELECT * FROM clients WHERE retell_agent_id = ?').get(agent_id);
+      const { rows: clients } = await db.query('SELECT * FROM clients WHERE retell_agent_id = $1', [agent_id]);
+      client = clients[0];
     }
 
     if (!client) {
@@ -105,10 +112,9 @@ router.post('/tools', async (req, res) => {
           });
 
           if (booking.success) {
-            db.prepare(`INSERT INTO appointments (id, client_id, phone, name, datetime, calcom_booking_id, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`)
-              .run(require('crypto').randomUUID(), client.id, client.phone_number, args.name,
-                `${args.date}T${args.time}`, booking.confirmationId);
+            await db.query(`INSERT INTO appointments (id, client_id, phone, name, datetime, calcom_booking_id, created_at)
+              VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)`, 
+              [randomUUID(), client.id, client.phone_number, args.name, `${args.date}T${args.time}`, booking.confirmationId]);
 
             await TelegramService.sendAppointmentNotification({
               name: args.name, email: args.email, date: args.date,

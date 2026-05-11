@@ -6,26 +6,27 @@ const { randomUUID } = require('crypto');
 async function handleCommand(db, chatId, text, firstName, username) {
   const parts = text.split(' ');
   const command = parts[0].toLowerCase();
-  const client = db.prepare('SELECT * FROM clients WHERE telegram_chat_id = ?').get(chatId);
+  const { rows: clients } = await db.query('SELECT * FROM clients WHERE telegram_chat_id = $1', [chatId]);
+  const client = clients[0];
   
   if (!client && command !== '/start') return 'Not linked. Use /start <token>';
 
   switch (command) {
     case '/start':
-      return handleStart(db, chatId, parts[1], firstName);
+      return await handleStart(db, chatId, parts[1], firstName);
 
     case '/status':
-      return handleStatus(db, client);
+      return await handleStatus(db, client);
 
     case '/calls':
-      return handleCalls(db, client);
+      return await handleCalls(db, client);
 
     case '/pause':
-      db.prepare('UPDATE clients SET ai_enabled = 0 WHERE id = ?').run(client.id);
+      await db.query('UPDATE clients SET ai_enabled = 0 WHERE id = $1', [client.id]);
       return '⏸️ AI paused. Use /resume to turn back on.';
 
     case '/resume':
-      db.prepare('UPDATE clients SET ai_enabled = 1 WHERE id = ?').run(client.id);
+      await db.query('UPDATE clients SET ai_enabled = 1 WHERE id = $1', [client.id]);
       return '▶️ AI resumed.';
 
     case '/reply':
@@ -34,10 +35,10 @@ async function handleCommand(db, chatId, text, firstName, username) {
       const message = parts.slice(2).join(' ');
       const res = await TwilioService.sendSMS(phone, message, client.id);
       if (res.success) {
-        db.prepare(`
+        await db.query(`
           INSERT INTO messages (id, client_id, phone, direction, body, status, created_at)
-          VALUES (?, ?, ?, 'outbound', ?, 'sent', ?)
-        `).run(randomUUID(), client.id, phone, message, new Date().toISOString());
+          VALUES ($1, $2, $3, 'outbound', $4, 'sent', $5)
+        `, [randomUUID(), client.id, phone, message, new Date().toISOString()]);
         return `✅ Sent to ${phone}:\n"${message}"`;
       }
       return `❌ Failed: ${res.error}`;
@@ -49,20 +50,22 @@ async function handleCommand(db, chatId, text, firstName, username) {
 
 async function handleStart(db, chatId, token, firstName) {
   if (!token) return 'Welcome! Please use the link provided by your admin to connect your business.';
-  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(token);
+  const { rows: clients } = await db.query('SELECT * FROM clients WHERE id = $1', [token]);
+  const client = clients[0];
   if (!client) return 'Invalid link. Ask your admin for a new onboarding link.';
-  db.prepare('UPDATE clients SET telegram_chat_id = ? WHERE id = ?').run(chatId, token);
+  await db.query('UPDATE clients SET telegram_chat_id = $1 WHERE id = $2', [chatId, token]);
   return `Hey ${firstName || 'there'}! 👋 You're all set.\n\n<b>${client.business_name}</b> is now connected to Elyvn.`;
 }
 
 async function handleStatus(db, client) {
   const today = new Date().toISOString().split('T')[0];
-  const stats = db.prepare(`
+  const { rows } = await db.query(`
     SELECT COUNT(*) as total,
       SUM(CASE WHEN outcome = 'booked' THEN 1 ELSE 0 END) as booked,
       SUM(CASE WHEN outcome = 'missed' THEN 1 ELSE 0 END) as missed
-    FROM calls WHERE client_id = ? AND date(created_at) = ?
-  `).get(client.id, today);
+    FROM calls WHERE client_id = $1 AND DATE(created_at) = $2
+  `, [client.id, today]);
+  const stats = rows[0];
 
   let text = `📊 <b>${client.business_name}</b>\n\n<b>Today</b>\n`;
   text += `Calls: ${stats.total || 0}`;
@@ -80,9 +83,9 @@ async function handleStatus(db, client) {
 }
 
 async function handleCalls(db, client) {
-  const calls = db.prepare(`
-    SELECT * FROM calls WHERE client_id = ? ORDER BY created_at DESC LIMIT 5
-  `).all(client.id);
+  const { rows: calls } = await db.query(`
+    SELECT * FROM calls WHERE client_id = $1 ORDER BY created_at DESC LIMIT 5
+  `, [client.id]);
 
   if (!calls || calls.length === 0) return '📜 No calls yet.';
 

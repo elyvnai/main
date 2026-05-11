@@ -20,8 +20,8 @@ class TwilioService {
     // Check opt-out if clientId provided
     if (clientId) {
       const db = getDb();
-      const row = db.prepare('SELECT 1 FROM sms_opt_outs WHERE phone = ? AND client_id = ?').get(to, clientId);
-      if (row) {
+      const { rows } = await db.query('SELECT 1 FROM sms_opt_outs WHERE phone = $1 AND client_id = $2', [to, clientId]);
+      if (rows.length > 0) {
         console.log(`[SMS] Blocked: ${to} is opted out for client ${clientId}`);
         return { success: false, error: 'Opted out' };
       }
