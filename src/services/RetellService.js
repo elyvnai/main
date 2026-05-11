@@ -15,6 +15,59 @@ class RetellService {
         };
     }
 
+    getToolDefinitions() {
+        return [
+            {
+                type: 'function',
+                name: 'check_availability',
+                description: 'Check available appointment slots for a specific date.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        date: {
+                            type: 'string',
+                            description: 'The date to check availability for in YYYY-MM-DD format.'
+                        }
+                    },
+                    required: ['date']
+                }
+            },
+            {
+                type: 'function',
+                name: 'book_appointment',
+                description: 'Book an appointment for the customer.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        name: {
+                            type: 'string',
+                            description: 'The name of the customer.'
+                        },
+                        email: {
+                            type: 'string',
+                            description: 'The email address of the customer.'
+                        },
+                        date: {
+                            type: 'string',
+                            description: 'The date of the appointment in YYYY-MM-DD format.'
+                        },
+                        time: {
+                            type: 'string',
+                            description: 'The time of the appointment in HH:mm format.'
+                        }
+                    },
+                    required: ['name', 'email', 'date', 'time']
+                }
+            },
+            {
+                type: 'transfer_call',
+                name: 'transfer_to_human',
+                description: 'Transfer the call to a human agent for further assistance.',
+                number: process.env.TRANSFER_PHONE_NUMBER
+            }
+        ];
+    }
+
     async getCall(callId) {
         try {
             const response = await fetch(`${this.baseUrl}/call/${callId}`, {
@@ -86,13 +139,14 @@ class RetellService {
             console.log(`🔄 Syncing Retell Agent Prompt for agent: ${agentId}...`);
             
             const result = await this.updateAgent(agentId, {
-                system_prompt: systemPrompt
+                system_prompt: systemPrompt,
+                tools: this.getToolDefinitions()
             });
 
             if (result) {
-                console.log('✅ Retell Agent Prompt synchronized successfully.');
+                console.log('✅ Retell Agent Prompt and Tools synchronized successfully.');
             } else {
-                console.warn('⚠️ Failed to synchronize Retell Agent Prompt.');
+                console.warn('⚠️ Failed to synchronize Retell Agent Prompt/Tools.');
             }
         } catch (error) {
             console.error('❌ Error in syncAgentPrompt:', error.message);
