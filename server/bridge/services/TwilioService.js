@@ -1,5 +1,6 @@
 const twilio = require('twilio');
 const { getDb } = require('../utils/dbAdapter');
+const logger = require('../utils/logger');
 
 class TwilioService {
   constructor() {
@@ -24,7 +25,7 @@ class TwilioService {
     if (clientId) {
       const { rows } = await db.query('SELECT 1 FROM sms_opt_outs WHERE phone = $1 AND client_id = $2', [to, clientId]);
       if (rows.length > 0) {
-        console.log(`[SMS] Blocked: ${to} is opted out for client ${clientId}`);
+        logger.info(`[SMS] Blocked: Opted out`, { phone: to, clientId });
         return { success: false, error: 'Opted out' };
       }
     }
@@ -53,10 +54,10 @@ class TwilioService {
           source: 'sms-delayed',
           payload: { to, body, clientId, fromOverride: from } 
         }, { delay: 1000 });
-        console.log(`[SMS] Rate limit hit for ${from}, message queued with delay`);
+        logger.info(`[SMS] Rate limit hit, message queued`, { from });
         return { success: true, queued: true };
       } catch (queueError) {
-        console.error('❌ Failed to queue delayed SMS:', queueError.message);
+        logger.error('Failed to queue delayed SMS:', { error: queueError.message });
       }
     }
     
@@ -64,7 +65,7 @@ class TwilioService {
     this.rateLimit.set(key, timestamps);
 
     if (!this.client) {
-      console.warn('⚠️ Twilio not configured, SMS not sent');
+      logger.warn('Twilio not configured, SMS not sent');
       return { success: false, error: 'Twilio not configured' };
     }
     try {
@@ -73,10 +74,10 @@ class TwilioService {
         from,
         to
       });
-      console.log(`📤 SMS sent from ${from} to ${to}: ${message.sid}`);
+      logger.info(`📤 SMS sent`, { from, to, sid: message.sid });
       return { success: true, sid: message.sid, status: message.status };
     } catch (error) {
-      console.error('❌ Twilio sendSMS error:', error.message);
+      logger.error('Twilio sendSMS error:', { error: error.message, to, from });
       return { success: false, error: error.message };
     }
   }

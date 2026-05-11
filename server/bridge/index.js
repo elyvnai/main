@@ -25,8 +25,28 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+  try {
+    const db = getDb();
+    await db.query('SELECT 1');
+    
+    const { connection: redis } = require('./utils/queue');
+    await redis.ping();
+
+    res.status(200).json({ 
+      status: 'ok', 
+      database: 'connected', 
+      redis: 'connected',
+      timestamp: new Date().toISOString() 
+    });
+  } catch (err) {
+    logger.error('Health check failed', { error: err.message });
+    res.status(503).json({ 
+      status: 'error', 
+      error: err.message,
+      timestamp: new Date().toISOString() 
+    });
+  }
 });
 
 runMigrations()

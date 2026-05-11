@@ -1,10 +1,10 @@
 const fetch = require('node-fetch');
 const { generateSystemPrompt } = require('../prompts/systemPrompt');
+const logger = require('../utils/logger');
 
 class RetellService {
   constructor() {
     this.apiKey = process.env.RETELL_API_KEY;
-    this.agentId = process.env.RETELL_AGENT_ID;
     this.baseUrl = 'https://api.retell.ai/v1';
   }
 
@@ -15,7 +15,7 @@ class RetellService {
     };
   }
 
-  getToolDefinitions() {
+  getToolDefinitions(client) {
     const tools = [
       {
         type: 'function',
@@ -49,12 +49,13 @@ class RetellService {
       }
     ];
 
-    if (process.env.TRANSFER_PHONE_NUMBER) {
+    const transferPhone = client?.transfer_phone || process.env.TRANSFER_PHONE_NUMBER;
+    if (transferPhone) {
       tools.push({
         type: 'transfer_call',
         name: 'transfer_to_human',
         description: 'Transfer the call to a human agent. Use this when the caller explicitly requests to speak with a person, the issue is complex, or you cannot resolve their request.',
-        number: process.env.TRANSFER_PHONE_NUMBER
+        number: transferPhone
       });
     }
 
@@ -64,7 +65,7 @@ class RetellService {
   async updateAgent(agentId, updateData) {
     try {
       if (!this.apiKey) {
-        console.warn('⚠️ RETELL_API_KEY not set. Skipping agent update.');
+        logger.warn('RETELL_API_KEY not set. Skipping agent update.');
         return null;
       }
       const response = await fetch(`${this.baseUrl}/update-agent/${agentId}`, {
@@ -74,37 +75,55 @@ class RetellService {
       });
       const data = await response.json();
       if (!response.ok) {
-        console.error('❌ Retell updateAgent error:', data);
+        logger.error('Retell updateAgent error:', { data, agentId });
         return null;
       }
       return data;
     } catch (error) {
-      console.error('❌ Retell updateAgent exception:', error.message);
+      logger.error('Retell updateAgent exception:', { error: error.message, agentId });
       return null;
     }
   }
 
-  async syncAgentPrompt() {
+  async syncAgentPrompt(client = null) {
+    if (client) {
+      return this.syncClientAgent(client);
+    }
+
     try {
-      if (!this.agentId) {
-        console.warn('⚠️ RETELL_AGENT_ID not set. Skipping prompt sync.');
-        return;
+      const { getDb } = require('../utils/dbAdapter');
+      const db = getDb();
+      const { rows: clients } = await db.query('SELECT * FROM clients WHERE retell_agent_id IS NOT NULL');
+      
+      logger.info(`🔄 Syncing Retell Agents for ${clients.length} clients...`);
+      for (const c of clients) {
+        await this.syncClientAgent(c);
       }
+    } catch (error) {
+      logger.error('syncAgentPrompt error:', { error: error.message });
+    }
+  }
+
+  async syncClientAgent(client) {
+    if (!client.retell_agent_id) return;
+
+    try {
       const businessConfig = {
-        businessName: process.env.BUSINESS_NAME || 'Elyvn',
-        businessHours: process.env.BUSINESS_HOURS || 'Not specified',
-        bookingLink: process.env.BOOKING_LINK || 'Not specified',
-        phoneNumber: process.env.BUSINESS_PHONE_NUMBER || process.env.TWILIO_PHONE_NUMBER || 'Not specified',
-        transferNumber: process.env.TRANSFER_PHONE_NUMBER || null
+        businessName: client.business_name,
+        businessHours: client.business_hours || 'Not specified',
+        bookingLink: client.calcom_booking_link || 'Not specified',
+        phoneNumber: client.phone_number,
+        transferNumber: client.transfer_phone || process.env.TRANSFER_PHONE_NUMBER || null
       };
       const systemPrompt = generateSystemPrompt(businessConfig);
-      const tools = this.getToolDefinitions();
-      console.log(`🔄 Syncing Retell Agent Prompt for ${this.agentId}...`);
-      const result = await this.updateAgent(this.agentId, { system_prompt: systemPrompt, tools });
-      if (result) console.log('✅ Retell Agent synced.');
-      else console.warn('⚠️ Failed to sync Retell Agent.');
-    } catch (error) {
-      console.error('❌ syncAgentPrompt error:', error.message);
+      const tools = this.getToolDefinitions(client);
+      
+      logger.info(`Syncing agent ${client.retell_agent_id} for ${client.business_name}`);
+      const result = await this.updateAgent(client.retell_agent_id, { system_prompt: systemPrompt, tools });
+      if (result) logger.info(`✅ Agent synced: ${client.business_name}`);
+      else logger.warn(`⚠️ Failed to sync agent: ${client.business_name}`);
+    } catch (err) {
+      logger.error(`Error syncing client agent: ${client.id}`, { error: err.message });
     }
   }
 

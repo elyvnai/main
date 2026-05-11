@@ -1,4 +1,5 @@
 const fetch = require('node-fetch');
+const logger = require('../utils/logger');
 
 class TelegramService {
   constructor() {
@@ -10,7 +11,7 @@ class TelegramService {
   async sendMessage(text, options = {}) {
     const chatId = options.chat_id;
     if (!chatId) {
-      console.warn('⚠️ Telegram sendMessage: No chat_id provided');
+      logger.warn('Telegram sendMessage: No chat_id provided');
       return { ok: false, error: 'No chat_id provided' };
     }
 
@@ -31,11 +32,10 @@ class TelegramService {
           source: 'telegram-delayed',
           payload: { text, options } 
         }, { delay: 1000 });
-        console.log(`[Telegram] Rate limit hit for ${chatId}, message queued with delay`);
+        logger.info(`[Telegram] Rate limit hit, message queued`, { chatId });
         return { ok: true, queued: true };
       } catch (queueError) {
-        console.error('❌ Failed to queue delayed telegram message:', queueError.message);
-        // Fallback: try to send anyway or just fail
+        logger.error('Failed to queue delayed telegram message:', { error: queueError.message });
       }
     }
     
@@ -56,11 +56,11 @@ class TelegramService {
       });
       const result = await response.json();
       if (!result.ok) {
-        console.error('❌ Telegram sendMessage error:', result.description);
+        logger.error('Telegram sendMessage error:', { description: result.description, chatId });
       }
       return result;
     } catch (error) {
-      console.error('❌ Telegram sendMessage exception:', error.message);
+      logger.error('Telegram sendMessage exception:', { error: error.message, chatId });
       return { ok: false, error: error.message };
     }
   }
