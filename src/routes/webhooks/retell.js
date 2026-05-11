@@ -14,11 +14,15 @@ const TwilioService = require('../../services/TwilioService');
  * POST /webhooks/retell/tools
  * Handles tool execution calls from Retell AI agent
  * Tools: check_availability, book_appointment, transfer_to_human
+ * 
+ * This endpoint receives tool calls from Retell's AI agent and executes
+ * the appropriate service methods, returning formatted results.
  */
 router.post('/tools', async (req, res) => {
     try {
         const { interaction_type, tool_call_id, name, arguments: toolArguments, call_id } = req.body;
 
+        // Validate interaction type
         if (interaction_type !== 'tool_call') {
             return res.status(400).json({ 
                 success: false,
@@ -29,37 +33,55 @@ router.post('/tools', async (req, res) => {
         console.log(`🛠️ Retell Tool Call [${name}] for call ${call_id}`);
         console.log(`   Arguments:`, toolArguments);
 
+        // Parse tool arguments
         let args;
         try {
-            args = typeof toolArguments === 'string' ? JSON.parse(toolArguments) : toolArguments;
+            args = typeof toolArguments === 'string' ? JSON.parse(toolArguments) : toolArguments || {};
         } catch (e) {
             console.error('❌ Failed to parse tool arguments:', toolArguments);
             return res.status(400).json({ 
                 success: false,
-                error: 'Invalid tool arguments format' 
+                error: 'Invalid tool arguments format. Expected JSON object.' 
             });
         }
 
         let result;
         let resultType = 'text';
 
+        // Handle tool execution based on tool name
         switch (name) {
             case 'check_availability': {
+                // Validate date parameter
                 if (!args.date) {
-                    result = 'Please provide a date in YYYY-MM-DD format to check availability.';
+                    result = 'Please provide a date in YYYY-MM-DD format (e.g., 2024-12-15) to check availability.';
                 } else {
-                    result = await CalComService.checkAvailability(args.date);
+                    // Validate date format
+                    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+                    if (!dateRegex.test(args.date)) {
+                        result = 'Please provide the date in YYYY-MM-DD format (e.g., 2024-12-15).';
+                    } else {
+                        result = await CalComService.checkAvailability(args.date);
+                    }
                 }
                 break;
             }
 
             case 'book_appointment': {
-                if (!args.name || !args.email || !args.date || !args.time) {
-                    result = 'To book an appointment, I need: your name, email, preferred date (YYYY-MM-DD), and time (HH:mm).';
+                // Validate required parameters
+                const missingFields = [];
+                if (!args.name) missingFields.push('name');
+                if (!args.email) missingFields.push('email');
+                if (!args.date) missingFields.push('date');
+                if (!args.time) missingFields.push('time');
+
+                if (missingFields.length > 0) {
+                    result = `To book an appointment, I need the following information: ${missingFields.join(', ')}. Please provide these details.`;
                 } else {
+                    // Get call and client info for additional context
                     const call = Call.findByCallId(call_id);
                     const client = call ? Client.findById(call.client_id) : null;
                     
+                    // Book appointment via Cal.com
                     const bookingResult = await CalComService.bookAppointment({
                         name: args.name,
                         email: args.email,
@@ -69,15 +91,21 @@ router.post('/tools', async (req, res) => {
                     });
 
                     if (bookingResult.success) {
+                        // Update client info if needed
                         if (client) {
                             const updateData = {};
-                            if (!client.first_name && args.name) updateData.first_name = args.name;
-                            if (!client.email && args.email) updateData.email = args.email;
+                            if (!client.first_name && args.name) {
+                                updateData.first_name = args.name;
+                            }
+                            if (!client.email && args.email) {
+                                updateData.email = args.email;
+                            }
                             
                             if (Object.keys(updateData).length > 0) {
                                 Client.update(client.id, updateData);
                             }
 
+                            // Create local appointment record
                             Appointment.create({
                                 client_id: client.id,
                                 title: `Appointment: ${args.name}`,
@@ -88,51 +116,54 @@ router.post('/tools', async (req, res) => {
                             });
                         }
                         
-                        await TelegramService.sendMessage(
-                            `📅 <b>New Appointment Booked</b>\n\n` +
-                            `👤 Name: ${args.name}\n` +
-                            `📧 Email: ${args.email}\n` +
-                            `📆 Date: ${args.date}\n` +
-                            `🕐 Time: ${args.time}\n` +
-                            `📱 Call ID: ${call_id}`
-                        );
+                        // Send Telegram notification about new booking
+                        await TelegramService.sendAppointmentNotification({
+                            name: args.name,
+                            email: args.email,
+                            date: args.date,
+                            time: args.time,
+                            confirmationId: bookingResult.confirmationId
+                        }, client);
 
                         result = `Great news! Your appointment is confirmed for ${args.date} at ${args.time}. A confirmation has been sent to ${args.email}. We look forward to speaking with you!`;
                         resultType = 'text';
                     } else {
-                        result = `I'm sorry, but I couldn't complete the booking: ${bookingResult.message}. Please try using our booking link or request a callback.`;
+                        // Booking failed - provide helpful error message
+                        const bookingLink = process.env.BOOKING_LINK || '';
+                        result = `I apologize, but I couldn't complete the booking: ${bookingResult.message}. Please try using our booking link ${bookingLink} or request a callback and we'll call you back within the hour.`;
                     }
                 }
                 break;
             }
 
             case 'transfer_to_human': {
-                console.log(`📞 Transfer requested for call ${call_id}`);
+                console.log(`📞 Transfer to human requested for call ${call_id}`);
                 
                 const call = Call.findByCallId(call_id);
                 const client = call ? Client.findById(call.client_id) : null;
                 
-                await TelegramService.sendMessage(
-                    `📞 <b>Transfer Requested</b>\n\n` +
-                    `Call ID: ${call_id}\n` +
-                    `Client: ${client?.first_name || 'Unknown'}\n` +
-                    `Phone: ${client?.phone_number || 'Unknown'}\n\n` +
-                    `Transfer number: ${process.env.TRANSFER_PHONE_NUMBER || 'Not configured'}`
-                );
+                // Get reason for transfer if provided
+                const reason = args.reason || args.description || 'Caller requested human assistance';
+                
+                // Send Telegram notification about transfer request
+                await TelegramService.sendTransferNotification(call_id, client, reason);
 
+                // For transfer_to_human, we return a message that will be spoken to the caller
+                // The actual transfer is handled by Retell using the transfer_call tool type
                 result = "Please hold on. I'm transferring you to a team member who can better assist you.";
                 break;
             }
 
             default: {
-                console.warn(`⚠️ Unknown tool: ${name}`);
+                console.warn(`⚠️ Unknown tool requested: ${name}`);
                 return res.status(404).json({ 
                     success: false,
-                    error: `Unknown tool: ${name}` 
+                    error: `Unknown tool: ${name}. Available tools are: check_availability, book_appointment, transfer_to_human` 
                 });
             }
         }
 
+        // Return successful tool execution result
         res.status(200).json({
             success: true,
             interaction_type: 'tool_call_result',
@@ -142,9 +173,14 @@ router.post('/tools', async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Retell tools webhook error:', error);
-        res.status(500).json({ 
-            success: false,
-            error: `Tool execution failed: ${error.message}` 
+        
+        // Return graceful error message to AI so it can explain to caller
+        res.status(200).json({
+            success: true,
+            interaction_type: 'tool_call_result',
+            tool_call_id: req.body.tool_call_id,
+            result: `I encountered an error while processing your request. Please try again or request to speak with a human representative.`,
+            result_type: 'text'
         });
     }
 });
@@ -177,6 +213,7 @@ router.post('/', async (req, res) => {
                         started_at: callData.startedAt
                     });
                 }
+                // Send "Live Call" notification for started calls
                 await TelegramService.sendCallNotification(call, client, 'started');
                 break;
 
@@ -206,12 +243,15 @@ router.post('/', async (req, res) => {
                     });
                 }
 
+                // Send "Call Ended" notification
                 await TelegramService.sendCallNotification(call, client, 'ended');
 
+                // Send recording if available
                 if (callData.recordingUrl) {
                     await TelegramService.sendAudio(callData.recordingUrl, `🎙️ Recording for call ${callData.callId}`);
                 }
 
+                // Handle Speed-to-Lead for missed calls
                 if (isMissed) {
                     await SpeedToLeadService.handleMissedCall(callData);
                 }
@@ -224,6 +264,7 @@ router.post('/', async (req, res) => {
                         call_summary: callData.summary
                     });
                     
+                    // Send call analysis notification
                     if (callData.summary || callData.transcript) {
                         let text = `📝 <b>Call Analyzed</b>\n\n`;
                         if (callData.summary) text += `<b>Summary:</b> ${callData.summary}\n\n`;
@@ -232,6 +273,9 @@ router.post('/', async (req, res) => {
                     }
                 }
                 break;
+
+            default:
+                console.log(`📡 Unhandled Retell event: ${event.event}`);
         }
 
         res.status(200).json({ success: true });

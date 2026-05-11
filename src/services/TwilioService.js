@@ -48,26 +48,38 @@ class TwilioService {
     }
 
     /**
-     * Sends the Full Menu SMS with all appointment booking options
+     * Sends the comprehensive Full Menu SMS with all appointment booking options
      * This is the Speed-to-Lead message sent after missed calls
+     * Includes all available options: booking, hours, callback, and urgent requests
+     * 
      * @param {string} to - Recipient phone number
      * @returns {Promise<{success: boolean, sid?: string, status?: string, error?: string}>}
      */
     async sendFullMenuSMS(to) {
-        const callbackNumber = this.phoneNumber;
+        const businessPhone = this.phoneNumber;
         
-        let body = `Hi from ${this.businessName}! 👋
+        const body = `Hi from ${this.businessName}! 👋
 
 We noticed you tried to reach us. Here's how we can help:
 
-1️⃣ Book Online: ${this.bookingLink}
-2️⃣ Our Hours: ${this.businessHours}
-3️⃣ Request a Callback: Reply CALLBACK
-4️⃣ Need Help Now? Reply URGENT
+📅 BOOK APPOINTMENT
+   ${this.bookingLink}
 
-We'll reach out within 1 hour!
+⏰ OUR HOURS
+   ${this.businessHours}
 
-Call or text us: ${callbackNumber}
+📞 REQUEST A CALLBACK
+   Reply CALLBACK and we'll call you within 1 hour
+
+⚡ NEED HELP NOW?
+   Reply URGENT and we'll prioritize your request
+
+💬 HAVE A QUESTION?
+   Just reply and we'll get back to you
+
+You can also call or text us directly at:
+   ${businessPhone}
+
 Reply STOP to opt out.`;
 
         return this.sendSMS(to, body);
@@ -120,6 +132,25 @@ Time: ${appointmentDetails.time}
 ${appointmentDetails.confirmationId ? `Confirmation: ${appointmentDetails.confirmationId}` : ''}
 
 Need to reschedule? Visit: ${this.bookingLink}
+
+Reply STOP to opt out.`;
+
+        return this.sendSMS(to, body);
+    }
+
+    /**
+     * Sends a welcome SMS to new contacts
+     * @param {string} to - Recipient phone number
+     * @returns {Promise<{success: boolean, sid?: string, status?: string, error?: string}>}
+     */
+    async sendWelcomeSMS(to) {
+        const body = `Welcome to ${this.businessName}! 🎉
+
+Thank you for reaching out. We're here to help!
+
+📅 Book online: ${this.bookingLink}
+⏰ Hours: ${this.businessHours}
+📞 Call/Text: ${this.phoneNumber}
 
 Reply STOP to opt out.`;
 

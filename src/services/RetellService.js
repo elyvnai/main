@@ -17,7 +17,7 @@ class RetellService {
 
     /**
      * Returns the tool definitions for the Retell AI agent
-     * Includes check_availability, book_appointment, and optionally transfer_to_human
+     * Includes check_availability, book_appointment, and transfer_to_human
      * @returns {Array} Array of tool definitions
      */
     getToolDefinitions() {
@@ -25,7 +25,7 @@ class RetellService {
             {
                 type: 'function',
                 name: 'check_availability',
-                description: 'Check available appointment slots for a specific date. Use this when a caller wants to schedule an appointment and you need to find open time slots.',
+                description: 'Check available appointment slots for a specific date. Use this when a caller wants to schedule an appointment and you need to find open time slots. Ask for the date in YYYY-MM-DD format before calling this tool.',
                 parameters: {
                     type: 'object',
                     properties: {
@@ -40,7 +40,7 @@ class RetellService {
             {
                 type: 'function',
                 name: 'book_appointment',
-                description: 'Book an appointment for a customer. Only use this after checking availability and confirming a time slot with the caller. Collect all required information before calling this tool.',
+                description: 'Book an appointment for a customer. ONLY use this after confirming an available time slot with the caller. Collect all required information (name, email, date, time) before calling this tool.',
                 parameters: {
                     type: 'object',
                     properties: {
@@ -50,7 +50,7 @@ class RetellService {
                         },
                         email: {
                             type: 'string',
-                            description: 'Email address for confirmation and reminders.'
+                            description: 'Email address for confirmation and reminders. Verify spelling before booking.'
                         },
                         date: {
                             type: 'string',
@@ -66,11 +66,12 @@ class RetellService {
             }
         ];
 
+        // Add transfer_to_human tool if TRANSFER_PHONE_NUMBER is configured
         if (process.env.TRANSFER_PHONE_NUMBER) {
             tools.push({
                 type: 'transfer_call',
                 name: 'transfer_to_human',
-                description: 'Transfer the call to a human agent. Use this when: the caller explicitly requests to speak with a person, the issue is complex or beyond your capabilities, the caller expresses frustration, or you cannot resolve their request.',
+                description: 'Transfer the call to a human agent. Use this when: the caller explicitly requests to speak with a person, the issue is complex or beyond your capabilities, the caller expresses frustration or dissatisfaction, or you cannot resolve their request.',
                 number: process.env.TRANSFER_PHONE_NUMBER
             });
         }
@@ -147,7 +148,9 @@ class RetellService {
             const businessConfig = {
                 businessName: process.env.BUSINESS_NAME || 'Elyvn',
                 businessHours: process.env.BUSINESS_HOURS || 'Not specified',
-                bookingLink: process.env.BOOKING_LINK || 'Not specified'
+                bookingLink: process.env.BOOKING_LINK || 'Not specified',
+                phoneNumber: process.env.BUSINESS_PHONE_NUMBER || process.env.TWILIO_PHONE_NUMBER || 'Not specified',
+                transferNumber: process.env.TRANSFER_PHONE_NUMBER || null
             };
 
             const systemPrompt = generateSystemPrompt(businessConfig);
