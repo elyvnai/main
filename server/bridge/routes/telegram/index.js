@@ -4,16 +4,25 @@ const { handleCallback } = require('./callbacks');
 const { getDb } = require('../../utils/dbAdapter');
 const TelegramService = require('../../services/TelegramService');
 const TwilioService = require('../../services/TwilioService');
+const { randomUUID } = require('crypto');
 const fetch = require('node-fetch');
 
 const router = express.Router();
 
 router.post('/', async (req, res) => {
-  const { message, callback_query } = req.body;
+  const { update_id, message, callback_query } = req.body;
+  const db = getDb();
+
+  if (update_id) {
+    const exists = db.prepare('SELECT 1 FROM webhook_events WHERE idempotency_key = ?').get(update_id.toString());
+    if (exists) return res.status(200).send('OK');
+
+    db.prepare('INSERT INTO webhook_events (id, idempotency_key, source, payload) VALUES (?, ?, ?, ?)')
+      .run(randomUUID(), update_id.toString(), 'telegram', JSON.stringify(req.body));
+  }
 
   try {
     if (message) {
-      const db = getDb();
       const text = message.text || '';
       const chatId = message.chat.id.toString();
 
@@ -48,7 +57,6 @@ router.post('/', async (req, res) => {
     }
 
     if (callback_query) {
-      const db = getDb();
       const chatId = callback_query.message?.chat?.id?.toString();
       const data = callback_query.data;
 

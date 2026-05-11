@@ -115,6 +115,21 @@ const MIGRATIONS = [
       db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_client_phone ON messages(client_id, phone)`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone)`);
     }
+  },
+  {
+    id: '002_webhook_events',
+    apply: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS webhook_events (
+          id TEXT PRIMARY KEY,
+          idempotency_key TEXT UNIQUE,
+          source TEXT,
+          payload TEXT,
+          created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+        )
+      `);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_webhook_events_idempotency ON webhook_events(idempotency_key)`);
+    }
   }
 ];
 

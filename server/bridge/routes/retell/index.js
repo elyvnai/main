@@ -1,10 +1,22 @@
 const express = require('express');
 const { handleCallStarted, handleCallEnded, handleCallAnalyzed } = require('./calls');
+const { getDb } = require('../../utils/dbAdapter');
+const { randomUUID } = require('crypto');
 
 const router = express.Router();
 
 router.post('/', async (req, res) => {
   const { event, call } = req.body;
+  
+  const idempotencyKey = `${event}-${call?.call_id}`;
+  const db = getDb();
+
+  const exists = db.prepare('SELECT 1 FROM webhook_events WHERE idempotency_key = ?').get(idempotencyKey);
+  if (exists) return res.status(200).send('OK');
+
+  db.prepare('INSERT INTO webhook_events (id, idempotency_key, source, payload) VALUES (?, ?, ?, ?)')
+    .run(randomUUID(), idempotencyKey, 'retell', JSON.stringify(req.body));
+
   try {
     switch (event) {
       case 'call_started': await handleCallStarted(call); break;
@@ -21,11 +33,20 @@ router.post('/', async (req, res) => {
 
 const CalComService = require('../../services/CalComService');
 const TelegramService = require('../../services/TelegramService');
-const { getDb } = require('../../utils/dbAdapter');
 
 router.post('/tools', async (req, res) => {
   try {
     const { interaction_type, tool_call_id, name, arguments: toolArguments, call_id, agent_id } = req.body;
+
+    const db = getDb();
+    const idempotencyKey = tool_call_id;
+    if (idempotencyKey) {
+      const exists = db.prepare('SELECT 1 FROM webhook_events WHERE idempotency_key = ?').get(idempotencyKey);
+      if (exists) return res.status(200).json({ success: true, tool_call_id, result: "Already processed" });
+
+      db.prepare('INSERT INTO webhook_events (id, idempotency_key, source, payload) VALUES (?, ?, ?, ?)')
+        .run(randomUUID(), idempotencyKey, 'retell_tool', JSON.stringify(req.body));
+    }
 
     if (interaction_type !== 'tool_call') {
       return res.status(400).json({ success: false, error: 'Expected tool_call' });
@@ -38,8 +59,6 @@ router.post('/tools', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Invalid arguments JSON' });
     }
 
-    const db = getDb();
-    
     // Try to find call + client from DB first
     let call = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(call_id);
     let client = call ? db.prepare('SELECT * FROM clients WHERE id = ?').get(call.client_id) : null;

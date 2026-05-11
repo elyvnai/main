@@ -17,11 +17,19 @@ router.post('/', async (req, res) => {
   const { From, Body, MessageSid, To } = req.body;
   if (!From || !Body) return;
 
+  const idempotencyKey = req.headers['x-twilio-signature'] || MessageSid;
+  const db = getDb();
+
+  const exists = db.prepare('SELECT 1 FROM webhook_events WHERE idempotency_key = ?').get(idempotencyKey);
+  if (exists) return;
+
+  db.prepare('INSERT INTO webhook_events (id, idempotency_key, source, payload) VALUES (?, ?, ?, ?)')
+    .run(randomUUID(), idempotencyKey, 'twilio', JSON.stringify(req.body));
+
   const phone = TwilioService.normalizePhoneNumber(From);
   const body = Body.trim();
   const upperBody = body.toUpperCase();
 
-  const db = getDb();
   const client = db.prepare('SELECT * FROM clients WHERE phone_number = ?').get(To);
   if (!client) return;
 
