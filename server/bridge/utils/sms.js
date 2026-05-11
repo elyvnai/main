@@ -4,7 +4,7 @@
 const { randomUUID } = require('crypto');
 
 async function sendSMS(to, body, from, db, clientId) {
-  console.log(`[SMS] ${from} \u2192 ${to}: ${body.slice(0, 80)}${body.length > 80 ? '...' : ''}`);
+  console.log(`[SMS] ${from} → ${to}: ${body.slice(0, 80)}${body.length > 80 ? '...' : ''}`);
 
   // TODO: Wire Twilio SDK
   // const twilio = require('twilio')(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
