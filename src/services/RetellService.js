@@ -15,18 +15,23 @@ class RetellService {
         };
     }
 
+    /**
+     * Returns the tool definitions for the Retell AI agent
+     * Includes check_availability, book_appointment, and optionally transfer_to_human
+     * @returns {Array} Array of tool definitions
+     */
     getToolDefinitions() {
         const tools = [
             {
                 type: 'function',
                 name: 'check_availability',
-                description: 'Check available appointment slots for a specific date.',
+                description: 'Check available appointment slots for a specific date. Use this when a caller wants to schedule an appointment and you need to find open time slots.',
                 parameters: {
                     type: 'object',
                     properties: {
                         date: {
                             type: 'string',
-                            description: 'The date to check availability for in YYYY-MM-DD format.'
+                            description: 'The date to check availability for, in YYYY-MM-DD format (e.g., 2024-12-15).'
                         }
                     },
                     required: ['date']
@@ -35,25 +40,25 @@ class RetellService {
             {
                 type: 'function',
                 name: 'book_appointment',
-                description: 'Book an appointment for the customer.',
+                description: 'Book an appointment for a customer. Only use this after checking availability and confirming a time slot with the caller. Collect all required information before calling this tool.',
                 parameters: {
                     type: 'object',
                     properties: {
                         name: {
                             type: 'string',
-                            description: 'The name of the customer.'
+                            description: 'Full name of the person booking the appointment.'
                         },
                         email: {
                             type: 'string',
-                            description: 'The email address of the customer.'
+                            description: 'Email address for confirmation and reminders.'
                         },
                         date: {
                             type: 'string',
-                            description: 'The date of the appointment in YYYY-MM-DD format.'
+                            description: 'The date of the appointment in YYYY-MM-DD format (e.g., 2024-12-15).'
                         },
                         time: {
                             type: 'string',
-                            description: 'The time of the appointment in HH:mm format.'
+                            description: 'The time of the appointment in HH:mm format, 24-hour clock (e.g., 14:30 for 2:30 PM).'
                         }
                     },
                     required: ['name', 'email', 'date', 'time']
@@ -65,7 +70,7 @@ class RetellService {
             tools.push({
                 type: 'transfer_call',
                 name: 'transfer_to_human',
-                description: 'Transfer the call to a human agent for further assistance.',
+                description: 'Transfer the call to a human agent. Use this when: the caller explicitly requests to speak with a person, the issue is complex or beyond your capabilities, the caller expresses frustration, or you cannot resolve their request.',
                 number: process.env.TRANSFER_PHONE_NUMBER
             });
         }
@@ -73,6 +78,11 @@ class RetellService {
         return tools;
     }
 
+    /**
+     * Get details of a specific call
+     * @param {string} callId - The Retell call ID
+     * @returns {Promise<Object|null>} Call details or null if not found
+     */
     async getCall(callId) {
         try {
             const response = await fetch(`${this.baseUrl}/call/${callId}`, {
@@ -91,7 +101,7 @@ class RetellService {
     /**
      * Updates the Retell Agent configuration
      * @param {string} agentId - The ID of the agent to update
-     * @param {Object} updateData - The data to update (e.g., { system_prompt: "..." })
+     * @param {Object} updateData - The data to update (e.g., { system_prompt: "...", tools: [...] })
      * @returns {Promise<Object|null>} The updated agent data or null if failed
      */
     async updateAgent(agentId, updateData) {
@@ -123,6 +133,7 @@ class RetellService {
 
     /**
      * Synchronizes the local system prompt template with the Retell API
+     * Updates both the system prompt and tool definitions
      */
     async syncAgentPrompt() {
         try {
@@ -140,12 +151,15 @@ class RetellService {
             };
 
             const systemPrompt = generateSystemPrompt(businessConfig);
+            const tools = this.getToolDefinitions();
 
             console.log(`🔄 Syncing Retell Agent Prompt for agent: ${agentId}...`);
+            console.log(`   System prompt length: ${systemPrompt.length} characters`);
+            console.log(`   Tools configured: ${tools.map(t => t.name).join(', ')}`);
             
             const result = await this.updateAgent(agentId, {
                 system_prompt: systemPrompt,
-                tools: this.getToolDefinitions()
+                tools: tools
             });
 
             if (result) {
@@ -158,6 +172,11 @@ class RetellService {
         }
     }
 
+    /**
+     * Parse call event data from Retell webhook payload
+     * @param {Object} eventData - Raw event data from Retell
+     * @returns {Object} Normalized call data
+     */
     parseCallEvent(eventData) {
         const call = eventData.call || eventData;
         return {
