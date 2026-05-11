@@ -90,7 +90,7 @@ async function handleCallEnded(callData) {
 
   // Speed-to-lead with opt-out check
   if (isMissed && parsed.phoneNumber && !isOptedOut(parsed.phoneNumber, client.id)) {
-    await TwilioService.sendFullMenuSMS(parsed.phoneNumber);
+    await TwilioService.sendFullMenuSMS(parsed.phoneNumber, client.id);
     if (client.telegram_chat_id && client.ai_enabled) {
       await TelegramService.sendMessage(
         `📵 <b>Missed call from ${parsed.phoneNumber}</b>\n⏱ ${parsed.duration}s\n📤 Auto-text sent with booking link.`,

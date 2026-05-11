@@ -35,7 +35,7 @@ const { getDb } = require('../../utils/dbAdapter');
 
 router.post('/tools', async (req, res) => {
   try {
-    const { interaction_type, tool_call_id, name, arguments: toolArguments, call_id } = req.body;
+    const { interaction_type, tool_call_id, name, arguments: toolArguments, call_id, agent_id } = req.body;
 
     if (interaction_type !== 'tool_call') {
       return res.status(400).json({ success: false, error: 'Expected tool_call' });
@@ -51,7 +51,12 @@ router.post('/tools', async (req, res) => {
     let result;
     const db = getDb();
     const call = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(call_id);
-    const client = call ? db.prepare('SELECT * FROM clients WHERE id = ?').get(call.client_id) : null;
+    let client = call ? db.prepare('SELECT * FROM clients WHERE id = ?').get(call.client_id) : null;
+
+    // Fallback if call not in DB yet
+    if (!client && agent_id) {
+      client = db.prepare('SELECT * FROM clients WHERE retell_agent_id = ?').get(agent_id);
+    }
 
     switch (name) {
       case 'check_availability': {

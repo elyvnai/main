@@ -26,7 +26,7 @@ router.post('/', async (req, res) => {
           const phoneMatch = repliedText.match(/\+?\d{10,15}/);
           if (phoneMatch) {
             const phone = TwilioService.normalizePhoneNumber(phoneMatch[0]);
-            await TwilioService.sendSMS(phone, text);
+            await TwilioService.sendSMS(phone, text, client.id);
             await TelegramService.sendMessage(`✉️ Sent to ${phone}:\n"${text}"`, { chat_id: chatId });
           } else {
             await TelegramService.sendMessage('Could not find a phone number to reply to.', { chat_id: chatId });

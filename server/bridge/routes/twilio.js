@@ -6,6 +6,11 @@ const { randomUUID } = require('crypto');
 
 const router = express.Router();
 
+function isOptedOut(db, phone, clientId) {
+  const row = db.prepare('SELECT 1 FROM sms_opt_outs WHERE phone = ? AND client_id = ?').get(phone, clientId);
+  return !!row;
+}
+
 router.post('/', async (req, res) => {
   res.set('Content-Type', 'text/xml').send('');
 
@@ -20,11 +25,11 @@ router.post('/', async (req, res) => {
   const client = db.prepare('SELECT * FROM clients WHERE phone_number = ?').get(To);
   if (!client) return;
 
-  // Opt-out handling
+  // Opt-out
   if (['STOP', 'UNSUBSCRIBE', 'CANCEL', 'QUIT'].includes(upperBody)) {
     db.prepare('INSERT OR REPLACE INTO sms_opt_outs (phone, client_id, opted_out_at) VALUES (?, ?, datetime("now"))')
       .run(phone, client.id);
-    await TelegramService.sendMessage(`\ud83d\udeab ${phone} opted out of SMS.`, { chat_id: client.telegram_chat_id });
+    await TelegramService.sendMessage(`🚫 ${phone} opted out of SMS.`, { chat_id: client.telegram_chat_id });
     return;
   }
 
@@ -33,14 +38,17 @@ router.post('/', async (req, res) => {
     db.prepare('DELETE FROM sms_opt_outs WHERE phone = ? AND client_id = ?').run(phone, client.id);
   }
 
-  // Log inbound message
+  // Log inbound
   db.prepare(`
     INSERT INTO messages (id, client_id, phone, direction, body, status, message_sid, created_at)
     VALUES (?, ?, ?, 'inbound', ?, 'received', ?, ?)
   `).run(randomUUID(), client.id, phone, body, MessageSid, new Date().toISOString());
 
-  // Handle keywords
+  // URGENT
   if (upperBody === 'URGENT') {
+    if (!isOptedOut(db, phone, client.id)) {
+      await TwilioService.sendSMS(phone, `We have received your URGENT request. A team member will prioritize your call and contact you shortly.`, client.id);
+    }
     db.prepare(`
       INSERT INTO leads (id, client_id, phone, source, stage, notes, created_at, updated_at)
       VALUES (?, ?, ?, 'inbound_sms', 'urgent', 'Client replied URGENT', ?, ?)
@@ -48,24 +56,23 @@ router.post('/', async (req, res) => {
     `).run(randomUUID(), client.id, phone, new Date().toISOString(), new Date().toISOString(), new Date().toISOString());
 
     await TelegramService.sendMessage(
-      `\ud83d\udea8 <b>URGENT reply from ${phone}:</b>\n"${body}"\n\nThey want an immediate callback.`,
+      `🚨 <b>URGENT reply from ${phone}:</b>\n"${body}"\n\nThey want an immediate callback.`,
       { chat_id: client.telegram_chat_id }
     );
-    await TwilioService.sendSMS(phone, `We have received your URGENT request. A team member will prioritize your call and contact you shortly.`);
     return;
   }
 
+  // CALLBACK
   if (upperBody === 'CALLBACK') {
-    await TelegramService.sendMessage(`\ud83d\udcde <b>CALLBACK REQUESTED from ${phone}</b>`, { chat_id: client.telegram_chat_id });
-    await TwilioService.sendCallbackConfirmation(phone);
+    if (!isOptedOut(db, phone, client.id)) {
+      await TwilioService.sendCallbackConfirmation(phone, client.id);
+    }
+    await TelegramService.sendMessage(`📞 <b>CALLBACK REQUESTED from ${phone}</b>`, { chat_id: client.telegram_chat_id });
     return;
   }
 
-  // Normal reply \u2014 notify owner
-  await TelegramService.sendSMSNotification(
-    { phone, body, content: body },
-    client
-  );
+  // Normal reply
+  await TelegramService.sendSMSNotification({ phone, body, content: body }, client);
 });
 
 module.exports = router;

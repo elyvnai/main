@@ -32,7 +32,7 @@ async function handleCommand(db, chatId, text, firstName, username) {
       if (parts.length < 3) return 'Usage: /reply <phone> <message>';
       const phone = TwilioService.normalizePhoneNumber(parts[1]);
       const message = parts.slice(2).join(' ');
-      const res = await TwilioService.sendSMS(phone, message);
+      const res = await TwilioService.sendSMS(phone, message, client.id);
       if (res.success) {
         db.prepare(`
           INSERT INTO messages (id, client_id, phone, direction, body, status, created_at)
