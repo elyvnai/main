@@ -4,11 +4,12 @@ const { connection } = require('./utils/queue');
 const WebhookService = require('./services/WebhookService');
 const TelegramService = require('./services/TelegramService');
 const TwilioService = require('./services/TwilioService');
+const logger = require('./utils/logger');
 const { handleCallStarted, handleCallEnded, handleCallAnalyzed } = require('./routes/retell/calls');
 
 const worker = new Worker('webhook-events', async (job) => {
   const { source, payload } = job.data;
-  console.log(`[Worker] Processing job ${job.id} from ${source}`);
+  logger.info(`[Worker] Processing job`, { jobId: job.id, source });
 
   try {
     switch (source) {
@@ -34,10 +35,10 @@ const worker = new Worker('webhook-events', async (job) => {
         await TwilioService.sendSMS(payload.to, payload.body, payload.clientId, null, payload.fromOverride);
         break;
       default:
-        console.warn(`[Worker] Unknown source: ${source}`);
+        logger.warn(`[Worker] Unknown source`, { source });
     }
   } catch (err) {
-    console.error(`[Worker] Error in job ${job.id}:`, err);
+    logger.error(`[Worker] Error in job`, { jobId: job.id, error: err.message, stack: err.stack });
     throw err; // BullMQ handles retry
   }
 }, {
@@ -50,11 +51,11 @@ const worker = new Worker('webhook-events', async (job) => {
 });
 
 worker.on('completed', (job) => {
-  console.log(`[Worker] Job ${job.id} completed`);
+  logger.info(`[Worker] Job completed`, { jobId: job.id });
 });
 
 worker.on('failed', (job, err) => {
-  console.error(`[Worker] Job ${job.id} failed:`, err);
+  logger.error(`[Worker] Job failed`, { jobId: job?.id, error: err.message });
 });
 
-console.log('[Worker] Webhook worker started');
+logger.info('[Worker] Webhook worker started');

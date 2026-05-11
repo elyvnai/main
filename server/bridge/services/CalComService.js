@@ -6,18 +6,23 @@ class CalComService {
     this.baseUrl = 'https://api.cal.com/v1';
   }
 
-  getHeaders() {
+  getHeaders(apiKeyOverride) {
+    const key = apiKeyOverride || this.apiKey;
     return {
-      'Authorization': `Bearer ${this.apiKey}`,
+      'Authorization': `Bearer ${key}`,
       'Content-Type': 'application/json'
     };
   }
 
-  async checkAvailability(date) {
+  async checkAvailability(date, client) {
     try {
-      // TODO: Implement real Cal.com availability check
-      // This is a stub that returns mock slots
-      console.log(`[CalCom] Checking availability for ${date}`);
+      if (!client?.calcom_booking_link && !client?.calcom_event_type_id) {
+        throw new Error('Cal.com not configured for this client');
+      }
+      
+      // TODO: Implement real Cal.com availability check using client credentials
+      // For now, still returning stub but accepting client context
+      console.log(`[CalCom] Checking availability for ${date} (Client: ${client.business_name})`);
       return {
         available: true,
         slots: ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00']
@@ -28,10 +33,15 @@ class CalComService {
     }
   }
 
-  async bookAppointment({ name, email, date, time, phoneNumber }) {
+  async bookAppointment({ name, email, date, time, phoneNumber }, client) {
     try {
-      console.log(`[CalCom] Booking appointment for ${name} on ${date} at ${time}`);
-      // TODO: Implement real Cal.com booking
+      if (!client?.calcom_booking_link && !client?.calcom_event_type_id) {
+        throw new Error('Cal.com not configured for this client');
+      }
+
+      console.log(`[CalCom] Booking appointment for ${name} (Client: ${client.business_name})`);
+      
+      // TODO: Implement real Cal.com booking using client credentials
       // Return mock success for now
       return {
         success: true,

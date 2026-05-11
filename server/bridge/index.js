@@ -8,6 +8,8 @@ const { configureRoutes } = require('./config/routes');
 const { runMigrations } = require('./utils/migrations');
 const RetellService = require('./services/RetellService');
 
+const logger = require('./utils/logger');
+
 const PORT = process.env.PORT || 3000;
 
 const app = express();
@@ -17,6 +19,12 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Request logging middleware
+app.use((req, res, next) => {
+  logger.info(`${req.method} ${req.path}`, { ip: req.ip });
+  next();
+});
+
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -25,12 +33,12 @@ runMigrations()
   .then(() => RetellService.syncAgentPrompt())
   .then(() => {
     configureRoutes(app);
-    console.log('[Elyvn] Routes mounted');
+    logger.info('[Elyvn] Routes mounted');
   })
   .catch(err => {
-    console.error('[Elyvn] Startup error:', err.message);
+    logger.error('[Elyvn] Startup error:', { error: err.message });
   });
 
 app.listen(PORT, () => {
-  console.log(`[Elyvn] Bridge live on port ${PORT}`);
+  logger.info(`[Elyvn] Bridge live on port ${PORT}`);
 });

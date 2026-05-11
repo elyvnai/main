@@ -85,7 +85,7 @@ router.post('/tools', async (req, res) => {
         if (!args.date) {
           result = 'Please provide a date in YYYY-MM-DD format.';
         } else {
-          const avail = await CalComService.checkAvailability(args.date);
+          const avail = await CalComService.checkAvailability(args.date, client);
           result = avail.available
             ? `Available slots: ${avail.slots.join(', ')}`
             : `No availability on ${args.date}.`;
@@ -109,7 +109,7 @@ router.post('/tools', async (req, res) => {
             date: args.date,
             time: args.time,
             phoneNumber: client.phone_number
-          });
+          }, client);
 
           if (booking.success) {
             await db.query(`INSERT INTO appointments (id, client_id, phone, name, datetime, calcom_booking_id, created_at)
