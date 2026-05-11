@@ -3,23 +3,14 @@ const { handleCallStarted, handleCallEnded, handleCallAnalyzed } = require('./ca
 
 const router = express.Router();
 
-// Main Retell events webhook
 router.post('/', async (req, res) => {
   const { event, call } = req.body;
-
   try {
     switch (event) {
-      case 'call_started':
-        await handleCallStarted(call);
-        break;
-      case 'call_ended':
-        await handleCallEnded(call);
-        break;
-      case 'call_analyzed':
-        await handleCallAnalyzed(call);
-        break;
-      default:
-        console.log(`[Retell] Unhandled event: ${event}`);
+      case 'call_started': await handleCallStarted(call); break;
+      case 'call_ended': await handleCallEnded(call); break;
+      case 'call_analyzed': await handleCallAnalyzed(call); break;
+      default: console.log(`[Retell] Unhandled event: ${event}`);
     }
     res.status(200).send('OK');
   } catch (err) {
@@ -28,7 +19,6 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Tool calls from Retell AI
 const CalComService = require('../../services/CalComService');
 const TelegramService = require('../../services/TelegramService');
 const { getDb } = require('../../utils/dbAdapter');
@@ -48,15 +38,28 @@ router.post('/tools', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Invalid arguments JSON' });
     }
 
-    let result;
     const db = getDb();
-    const call = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(call_id);
+    
+    // Try to find call + client from DB first
+    let call = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(call_id);
     let client = call ? db.prepare('SELECT * FROM clients WHERE id = ?').get(call.client_id) : null;
-
-    // Fallback if call not in DB yet
+    
+    // Fallback: look up client by retell_agent_id from the request
     if (!client && agent_id) {
       client = db.prepare('SELECT * FROM clients WHERE retell_agent_id = ?').get(agent_id);
     }
+
+    if (!client) {
+      return res.status(200).json({
+        success: true,
+        interaction_type: 'tool_call_result',
+        tool_call_id,
+        result: "I'm sorry, I couldn't identify your business. Please call back.",
+        result_type: 'text'
+      });
+    }
+
+    let result;
 
     switch (name) {
       case 'check_availability': {
@@ -64,7 +67,7 @@ router.post('/tools', async (req, res) => {
           result = 'Please provide a date in YYYY-MM-DD format.';
         } else {
           const avail = await CalComService.checkAvailability(args.date);
-          result = avail.available 
+          result = avail.available
             ? `Available slots: ${avail.slots.join(', ')}`
             : `No availability on ${args.date}.`;
         }
@@ -86,17 +89,17 @@ router.post('/tools', async (req, res) => {
             email: args.email,
             date: args.date,
             time: args.time,
-            phoneNumber: client?.phone_number
+            phoneNumber: client.phone_number
           });
 
           if (booking.success) {
-            db.prepare(`INSERT INTO appointments (id, client_id, phone, name, datetime, calcom_booking_id, created_at) 
+            db.prepare(`INSERT INTO appointments (id, client_id, phone, name, datetime, calcom_booking_id, created_at)
               VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`)
-              .run(require('crypto').randomUUID(), client?.id, client?.phone_number, args.name, 
+              .run(require('crypto').randomUUID(), client.id, client.phone_number, args.name,
                 `${args.date}T${args.time}`, booking.confirmationId);
 
             await TelegramService.sendAppointmentNotification({
-              name: args.name, email: args.email, date: args.date, 
+              name: args.name, email: args.email, date: args.date,
               time: args.time, confirmationId: booking.confirmationId
             }, client);
 

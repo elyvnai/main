@@ -12,7 +12,6 @@ router.post('/', async (req, res) => {
   const { message, callback_query } = req.body;
 
   try {
-    // Commands & Reply-to-message
     if (message) {
       const db = getDb();
       const text = message.text || '';
@@ -48,14 +47,12 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // Inline button callbacks
     if (callback_query) {
       const db = getDb();
       const chatId = callback_query.message?.chat?.id?.toString();
       const data = callback_query.data;
 
-      // Answer callback query to remove loading spinner
-      await fetch(`${TelegramService.apiUrl}/answerCallbackQuery`, {
+      await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callback_query_id: callback_query.id })
