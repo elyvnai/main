@@ -4,9 +4,9 @@ class Call {
     static create(data) {
         const sql = `
             INSERT INTO calls (call_id, client_id, direction, status, duration, 
-                             recording_url, transcript, call_summary, disconnect_reason,
+                             recording_url, transcript, call_summary, outcome, disconnect_reason,
                              sms_sent, started_at, ended_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const params = [
             data.call_id,
@@ -17,6 +17,7 @@ class Call {
             data.recording_url || null,
             data.transcript || null,
             data.call_summary || null,
+            data.outcome || null,
             data.disconnect_reason || null,
             0,
             data.started_at || null,
@@ -45,6 +46,7 @@ class Call {
         if (data.recording_url !== undefined) { fields.push('recording_url = ?'); values.push(data.recording_url); }
         if (data.transcript !== undefined) { fields.push('transcript = ?'); values.push(data.transcript); }
         if (data.call_summary !== undefined) { fields.push('call_summary = ?'); values.push(data.call_summary); }
+        if (data.outcome !== undefined) { fields.push('outcome = ?'); values.push(data.outcome); }
         if (data.disconnect_reason !== undefined) { fields.push('disconnect_reason = ?'); values.push(data.disconnect_reason); }
         if (data.ended_at !== undefined) { fields.push('ended_at = ?'); values.push(data.ended_at); }
         if (data.sms_sent !== undefined) { fields.push('sms_sent = ?'); values.push(data.sms_sent ? 1 : 0); }

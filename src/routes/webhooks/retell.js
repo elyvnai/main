@@ -259,9 +259,15 @@ router.post('/', async (req, res) => {
 
             case 'call_analyzed':
                 if (call) {
+                    // Extract outcome from call analysis data
+                    const outcome = event.call?.call_analysis?.outcome || 
+                                   event.call?.outcome ||
+                                   null;
+                    
                     call = Call.update(call.id, {
                         transcript: callData.transcript,
-                        call_summary: callData.summary
+                        call_summary: callData.summary,
+                        outcome: outcome
                     });
                     
                     // Send call analysis notification
@@ -269,6 +275,7 @@ router.post('/', async (req, res) => {
                         let text = `📝 <b>Call Analyzed</b>\n\n`;
                         if (callData.summary) text += `<b>Summary:</b> ${callData.summary}\n\n`;
                         if (callData.transcript) text += `<b>Transcript:</b> <i>${callData.transcript.substring(0, 500)}...</i>`;
+                        if (outcome) text += `\n🎯 <b>Outcome:</b> ${outcome}`;
                         await TelegramService.sendMessage(text);
                     }
                 }

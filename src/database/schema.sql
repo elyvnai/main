@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS calls (
     recording_url TEXT,
     transcript TEXT,
     call_summary TEXT,
+    outcome TEXT,
     disconnect_reason TEXT,
     sms_sent INTEGER DEFAULT 0,
     started_at DATETIME,
