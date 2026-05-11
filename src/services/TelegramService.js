@@ -57,6 +57,29 @@ class TelegramService {
         }
     }
 
+    async sendDocument(docUrl, caption) {
+        if (this.paused) return;
+        try {
+            const payload = {
+                chat_id: this.chatId,
+                document: docUrl,
+                caption: caption,
+                parse_mode: 'HTML'
+            };
+
+            const response = await fetch(`${this.apiUrl}/sendDocument`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            return await response.json();
+        } catch (error) {
+            console.error('❌ Telegram sendDocument error:', error.message);
+            return { ok: false, error: error.message };
+        }
+    }
+
     async sendToAdmin(text, options = {}) {
         return this.sendMessage(text, options);
     }
@@ -73,39 +96,59 @@ class TelegramService {
         const phone = client?.phone_number || call.phone_number || 'Unknown';
         const callId = call.call_id || 'Unknown';
         
-        let message = '';
-        
         if (type === 'started') {
-            // Live Call format - shows active call with all relevant info
+            // Live Call format - shows active call with Listen button
             const now = new Date().toLocaleTimeString('en-US', { 
                 hour: 'numeric', 
                 minute: '2-digit',
                 hour12: true 
             });
             
-            message = `📞 <b>🔴 LIVE CALL STARTED</b>\n\n` +
-                      `👤 <b>Caller:</b> ${firstName}\n` +
-                      `📱 <b>Phone:</b> ${phone}\n` +
-                      `🕐 <b>Started:</b> ${now}\n` +
-                      `🆔 <b>Call ID:</b> <code>${callId}</code>\n\n` +
-                      `<i>Awaiting call completion...</i>`;
+            const message = `📞 <b>🔴 LIVE CALL STARTED</b>\n\n` +
+                          `👤 <b>Caller:</b> ${firstName}\n` +
+                          `📱 <b>Phone:</b> ${phone}\n` +
+                          `🕐 <b>Started:</b> ${now}\n` +
+                          `🆔 <b>Call ID:</b> <code>${callId}</code>\n\n` +
+                          `<i>Awaiting call completion...</i>`;
+            
+            return this.sendMessage(message);
         } else {
-            // Call Ended format - shows summary with duration and status
-            const statusEmoji = call.status === 'completed' ? '✅' : '❌';
+            // Completed Call format - shows summary with action buttons
             const duration = call.duration || 0;
             const durationStr = duration >= 60 
                 ? `${Math.floor(duration / 60)}m ${duration % 60}s`
                 : `${duration}s`;
             
-            message = `${statusEmoji} <b>Call Ended</b>\n\n` +
-                      `👤 <b>Caller:</b> ${firstName}\n` +
-                      `📱 <b>Phone:</b> ${phone}\n` +
-                      `⏱️ <b>Duration:</b> ${durationStr}\n` +
-                      `📊 <b>Status:</b> ${call.status}\n` +
-                      `🆔 <b>Call ID:</b> <code>${callId}</code>`;
+            let summary = call.call_summary || '';
+            const outcome = call.outcome || '';
+            
+            const message = `✅ <b>Call Completed</b>\n\n` +
+                          `👤 <b>Caller:</b> ${firstName}\n` +
+                          `📱 <b>Phone:</b> ${phone}\n` +
+                          `⏱️ <b>Duration:</b> ${durationStr}\n` +
+                          `📊 <b>Status:</b> ${call.status || 'completed'}\n`;
+            
+            if (summary) {
+                message += `\n📝 <b>Summary:</b>\n${summary.substring(0, 200)}${summary.length > 200 ? '...' : ''}`;
+            }
+            
+            if (outcome) {
+                message += `\n\n🎯 <b>Outcome:</b> ${outcome}`;
+            }
+            
+            message += `\n\n🆔 <b>Call ID:</b> <code>${callId}</code>`;
+            
+            // Add inline keyboard with action buttons
+            return this.sendMessage(message, {
+                reply_markup: JSON.stringify({
+                    inline_keyboard: [[
+                        { text: '📝 Transcript', callback_data: `transcript_${call.id}` },
+                        { text: '🎙️ Recording', callback_data: `recording_${call.id}` },
+                        { text: '💬 SMS Reply', callback_data: `sms_reply_${call.id}` }
+                    ]]
+                })
+            });
         }
-
-        return this.sendMessage(message);
     }
 
     /**

@@ -60,25 +60,24 @@ class TwilioService {
         
         const body = `Hi from ${this.businessName}! 👋
 
-We noticed you tried to reach us. Here's how we can help:
+We missed you! Here's how to connect:
 
 📅 BOOK APPOINTMENT
-   ${this.bookingLink}
+${this.bookingLink}
 
 ⏰ OUR HOURS
-   ${this.businessHours}
+${this.businessHours}
 
-📞 REQUEST A CALLBACK
-   Reply CALLBACK and we'll call you within 1 hour
+📞 REQUEST CALLBACK
+Reply CALLBACK - we'll call you within 1hr
 
-⚡ NEED HELP NOW?
-   Reply URGENT and we'll prioritize your request
+⚡ URGENT?
+Reply URGENT - we'll prioritize you
 
-💬 HAVE A QUESTION?
-   Just reply and we'll get back to you
+💬 GENERAL QUESTION?
+Just reply and we'll respond
 
-You can also call or text us directly at:
-   ${businessPhone}
+Direct: ${businessPhone}
 
 Reply STOP to opt out.`;
 
