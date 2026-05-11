@@ -1,7 +1,3 @@
-// server/bridge/index.js — Elyvn Bridge Entry Point
-// Connects Twilio → Retell AI → Telegram Bot
-// Three webhooks, one number, zero frontend.
-
 require('dotenv').config();
 
 const express = require('express');
@@ -20,15 +16,19 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Run DB migrations before accepting traffic
+// Health check mounts immediately — Railway needs this
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Run migrations, then mount routes
 runMigrations().then(() => {
   configureRoutes(app);
-
-  app.listen(PORT, () => {
-    console.log(`[Elyvn] Bridge live on port ${PORT}`);
-    console.log(`[Elyvn] Webhooks: /webhooks/retell | /webhooks/twilio | /webhooks/telegram`);
-  });
+  console.log('[Elyvn] Routes mounted');
 }).catch(err => {
-  console.error('[Elyvn] Migration failed, exiting:', err);
-  process.exit(1);
+  console.error('[Elyvn] Migration failed — routes NOT mounted:', err.message);
+});
+
+app.listen(PORT, () => {
+  console.log(`[Elyvn] Bridge live on port ${PORT}`);
 });

@@ -1,4 +1,3 @@
-// server/bridge/utils/dbAdapter.js
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
@@ -9,12 +8,10 @@ let db = null;
 
 function getDb() {
   if (!db) {
-    // Ensure the data directory exists (Railway's filesystem is ephemeral)
     const dir = path.dirname(DB_PATH);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-
     db = new Database(DB_PATH);
     db.pragma('journal_mode = WAL');
     console.log(`[DB] Connected: ${DB_PATH}`);
