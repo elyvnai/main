@@ -7,6 +7,7 @@ class TwilioService {
     this.authToken = process.env.TWILIO_AUTH_TOKEN;
     this.phoneNumber = process.env.TWILIO_PHONE_NUMBER;
     this._client = null;
+    this.rateLimit = new Map();
   }
 
   get client() {
@@ -16,19 +17,51 @@ class TwilioService {
     return this._client;
   }
 
-  async sendSMS(to, body, clientId = null, dbClient = null) {
+  async sendSMS(to, body, clientId = null, dbClient = null, fromOverride = null) {
     const db = dbClient || getDb();
     
     // Check opt-out if clientId provided
     if (clientId) {
-      // If dbClient is provided, it should already have the context set for RLS
-      // but we still include the where clause for extra safety and to satisfy the query
       const { rows } = await db.query('SELECT 1 FROM sms_opt_outs WHERE phone = $1 AND client_id = $2', [to, clientId]);
       if (rows.length > 0) {
         console.log(`[SMS] Blocked: ${to} is opted out for client ${clientId}`);
         return { success: false, error: 'Opted out' };
       }
     }
+
+    // Determine from number: fromOverride > client.phone_number > env.TWILIO_PHONE_NUMBER
+    let from = fromOverride || this.phoneNumber;
+    if (!fromOverride && clientId) {
+      const { rows: clients } = await db.query('SELECT phone_number FROM clients WHERE id = $1', [clientId]);
+      if (clients[0]?.phone_number) {
+        from = clients[0].phone_number;
+      }
+    }
+
+    // Rate limiting logic (per from-number)
+    const key = `sms:${from}`;
+    const now = Date.now();
+    if (!this.rateLimit.has(key)) {
+      this.rateLimit.set(key, []);
+    }
+    let timestamps = this.rateLimit.get(key).filter(t => now - t < 1000);
+    
+    if (timestamps.length >= 1) { // 1 msg/sec limit for Twilio long codes
+      try {
+        const { webhookQueue } = require('../utils/queue');
+        await webhookQueue.add('sms-delayed', { 
+          source: 'sms-delayed',
+          payload: { to, body, clientId, fromOverride: from } 
+        }, { delay: 1000 });
+        console.log(`[SMS] Rate limit hit for ${from}, message queued with delay`);
+        return { success: true, queued: true };
+      } catch (queueError) {
+        console.error('❌ Failed to queue delayed SMS:', queueError.message);
+      }
+    }
+    
+    timestamps.push(now);
+    this.rateLimit.set(key, timestamps);
 
     if (!this.client) {
       console.warn('⚠️ Twilio not configured, SMS not sent');
@@ -37,10 +70,10 @@ class TwilioService {
     try {
       const message = await this.client.messages.create({
         body,
-        from: this.phoneNumber,
+        from,
         to
       });
-      console.log(`📤 SMS sent to ${to}: ${message.sid}`);
+      console.log(`📤 SMS sent from ${from} to ${to}: ${message.sid}`);
       return { success: true, sid: message.sid, status: message.status };
     } catch (error) {
       console.error('❌ Twilio sendSMS error:', error.message);

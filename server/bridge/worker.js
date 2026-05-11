@@ -3,6 +3,7 @@ const { Worker } = require('bullmq');
 const { connection } = require('./utils/queue');
 const WebhookService = require('./services/WebhookService');
 const TelegramService = require('./services/TelegramService');
+const TwilioService = require('./services/TwilioService');
 const { handleCallStarted, handleCallEnded, handleCallAnalyzed } = require('./routes/retell/calls');
 
 const worker = new Worker('webhook-events', async (job) => {
@@ -28,6 +29,9 @@ const worker = new Worker('webhook-events', async (job) => {
         break;
       case 'telegram-delayed':
         await TelegramService.sendMessage(payload.text, payload.options);
+        break;
+      case 'sms-delayed':
+        await TwilioService.sendSMS(payload.to, payload.body, payload.clientId, null, payload.fromOverride);
         break;
       default:
         console.warn(`[Worker] Unknown source: ${source}`);
