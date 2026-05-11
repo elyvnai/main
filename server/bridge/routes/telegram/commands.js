@@ -6,33 +6,29 @@ const { randomUUID } = require('crypto');
 async function handleCommand(db, chatId, text, firstName, username) {
   const parts = text.split(' ');
   const command = parts[0].toLowerCase();
-
   const client = db.prepare('SELECT * FROM clients WHERE telegram_chat_id = ?').get(chatId);
+  
+  if (!client && command !== '/start') return 'Not linked. Use /start <token>';
 
   switch (command) {
     case '/start':
       return handleStart(db, chatId, parts[1], firstName);
 
     case '/status':
-      if (!client) return 'Not linked. Use /start <token>';
       return handleStatus(db, client);
 
     case '/calls':
-      if (!client) return 'Not linked. Use /start <token>';
       return handleCalls(db, client);
 
     case '/pause':
-      if (!client) return 'Not linked. Use /start <token>';
-      TelegramService.paused = true;
-      return '⏸️ Notifications paused. Use /resume to turn back on.';
+      db.prepare('UPDATE clients SET ai_enabled = 0 WHERE id = ?').run(client.id);
+      return '⏸️ AI paused. Use /resume to turn back on.';
 
     case '/resume':
-      if (!client) return 'Not linked. Use /start <token>';
-      TelegramService.paused = false;
-      return '▶️ Notifications resumed.';
+      db.prepare('UPDATE clients SET ai_enabled = 1 WHERE id = ?').run(client.id);
+      return '▶️ AI resumed.';
 
     case '/reply':
-      if (!client) return 'Not linked. Use /start <token>';
       if (parts.length < 3) return 'Usage: /reply <phone> <message>';
       const phone = TwilioService.normalizePhoneNumber(parts[1]);
       const message = parts.slice(2).join(' ');
@@ -52,15 +48,11 @@ async function handleCommand(db, chatId, text, firstName, username) {
 }
 
 async function handleStart(db, chatId, token, firstName) {
-  if (!token) {
-    return 'Welcome! Please use the link provided by your admin to connect your business.';
-  }
+  if (!token) return 'Welcome! Please use the link provided by your admin to connect your business.';
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(token);
   if (!client) return 'Invalid link. Ask your admin for a new onboarding link.';
-  
   db.prepare('UPDATE clients SET telegram_chat_id = ? WHERE id = ?').run(chatId, token);
-  
-  return `Hey ${firstName || 'there'}! 👋 You're all set.\n\n<b>${client.business_name}</b> is now connected to Elyvn.\n\nEvery call gets answered automatically. Missed calls get a text back in under 60 seconds. You get a notification here for every call and message.\n\nType /status to see your dashboard.`;
+  return `Hey ${firstName || 'there'}! 👋 You're all set.\n\n<b>${client.business_name}</b> is now connected to Elyvn.`;
 }
 
 async function handleStatus(db, client) {
@@ -76,12 +68,12 @@ async function handleStatus(db, client) {
   text += `Calls: ${stats.total || 0}`;
   if (stats.booked) text += ` (${stats.booked} booked)`;
   if (stats.missed) text += ` (${stats.missed} missed)`;
-  text += `\n\n${TelegramService.paused ? '🔴 AI is paused' : '🟢 AI is active'}`;
+  text += `\n\n${client.ai_enabled ? '🟢 AI is active' : '🔴 AI is paused'}`;
 
   const buttons = [
     [{ text: '📞 Calls', callback_data: 'quick_calls' }],
-    [{ text: TelegramService.paused ? '▶️ Resume AI' : '⏸️ Pause AI',
-       callback_data: TelegramService.paused ? 'quick_resume' : 'quick_pause' }]
+    [{ text: client.ai_enabled ? '⏸️ Pause AI' : '▶️ Resume AI',
+       callback_data: client.ai_enabled ? 'quick_pause' : 'quick_resume' }]
   ];
 
   return { text, buttons };
@@ -102,15 +94,12 @@ async function handleCalls(db, client) {
     const duration = c.duration ? `${Math.floor(c.duration / 60)}m ${c.duration % 60}s` : '0s';
     const outcome = c.outcome || 'unknown';
     const emoji = outcome === 'booked' ? '✅' : outcome === 'missed' ? '❌' : '📞';
-    
     text += `${emoji} ${phone} — ${duration} — ${outcome.toUpperCase()}\n`;
-    
     if (c.call_id) {
       buttons.push([{ text: `📄 ${phone.slice(-4)} — ${outcome}`,
         callback_data: `transcript_${c.call_id}` }]);
     }
   }
-
   return { text, buttons };
 }
 
