@@ -6,29 +6,31 @@ const { randomUUID } = require('crypto');
 const router = express.Router();
 
 router.post('/', async (req, res) => {
-  const { event, call } = req.body;
-  
-  const idempotencyKey = `${event}-${call?.call_id}`;
-  const db = getDb();
+  res.status(200).send('OK');
 
-  const exists = db.prepare('SELECT 1 FROM webhook_events WHERE idempotency_key = ?').get(idempotencyKey);
-  if (exists) return res.status(200).send('OK');
+  (async () => {
+    try {
+      const { event, call } = req.body;
+      
+      const idempotencyKey = `${event}-${call?.call_id}`;
+      const db = getDb();
 
-  db.prepare('INSERT INTO webhook_events (id, idempotency_key, source, payload) VALUES (?, ?, ?, ?)')
-    .run(randomUUID(), idempotencyKey, 'retell', JSON.stringify(req.body));
+      const exists = db.prepare('SELECT 1 FROM webhook_events WHERE idempotency_key = ?').get(idempotencyKey);
+      if (exists) return;
 
-  try {
-    switch (event) {
-      case 'call_started': await handleCallStarted(call); break;
-      case 'call_ended': await handleCallEnded(call); break;
-      case 'call_analyzed': await handleCallAnalyzed(call); break;
-      default: console.log(`[Retell] Unhandled event: ${event}`);
+      db.prepare('INSERT INTO webhook_events (id, idempotency_key, source, payload) VALUES (?, ?, ?, ?)')
+        .run(randomUUID(), idempotencyKey, 'retell', JSON.stringify(req.body));
+
+      switch (event) {
+        case 'call_started': await handleCallStarted(call); break;
+        case 'call_ended': await handleCallEnded(call); break;
+        case 'call_analyzed': await handleCallAnalyzed(call); break;
+        default: console.log(`[Retell] Unhandled event: ${event}`);
+      }
+    } catch (err) {
+      console.error('[Retell Webhook] Async error:', err);
     }
-    res.status(200).send('OK');
-  } catch (err) {
-    console.error('[Retell] Webhook error:', err);
-    res.status(500).send('Error');
-  }
+  })();
 });
 
 const CalComService = require('../../services/CalComService');
