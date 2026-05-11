@@ -19,7 +19,8 @@ const MIGRATIONS = [
           timezone TEXT DEFAULT 'UTC',
           ai_enabled INTEGER DEFAULT 1,
           business_hours TEXT DEFAULT 'Mon-Fri 9AM-6PM',
-          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+          onboarding_token TEXT UNIQUE
         )
       `);
 

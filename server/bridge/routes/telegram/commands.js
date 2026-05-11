@@ -46,11 +46,17 @@ async function handleCommand(db, chatId, text, firstName, username, client) {
 
 async function handleStart(db, chatId, token, firstName) {
   if (!token) return 'Welcome! Please use the link provided by your admin to connect your business.';
-  // Using direct pool here because we don't have a client ID yet for context
-  const { rows: clients } = await db.query('SELECT * FROM clients WHERE id = $1', [token]);
+  
+  // Validate token belongs to exactly one client and they aren't already linked
+  const { rows: clients } = await db.query(
+    'SELECT * FROM clients WHERE onboarding_token = $1 AND telegram_chat_id IS NULL', 
+    [token]
+  );
+  
   const client = clients[0];
-  if (!client) return 'Invalid link. Ask your admin for a new onboarding link.';
-  await db.query('UPDATE clients SET telegram_chat_id = $1 WHERE id = $2', [chatId, token]);
+  if (!client) return 'Invalid or expired token. If you have already linked your account, you cannot use the token again.';
+  
+  await db.query('UPDATE clients SET telegram_chat_id = $1 WHERE id = $2', [chatId, client.id]);
   return `Hey ${firstName || 'there'}! 👋 You're all set.\n\n<b>${client.business_name}</b> is now connected to Elyvn.`;
 }
 
