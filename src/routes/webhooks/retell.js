@@ -18,13 +18,18 @@ router.post('/tools', async (req, res) => {
 
         console.log(`🛠️ Retell Tool Call [${name}] for call ${call_id}`);
 
+        let args;
+        try {
+            args = typeof toolArguments === 'string' ? JSON.parse(toolArguments) : toolArguments;
+        } catch (e) {
+            console.error('❌ Failed to parse tool arguments:', toolArguments);
+            return res.status(400).json({ error: 'Invalid tool arguments' });
+        }
+
         let result;
         if (name === 'check_availability') {
-            const { date } = JSON.parse(toolArguments);
-            result = await CalComService.checkAvailability(date);
+            result = await CalComService.checkAvailability(args.date);
         } else if (name === 'book_appointment') {
-            const args = JSON.parse(toolArguments);
-            
             // Get client for this call
             const call = Call.findByCallId(call_id);
             const client = call ? Client.findById(call.client_id) : null;
@@ -37,6 +42,15 @@ router.post('/tools', async (req, res) => {
             if (bookingResult.success) {
                 // Local synchronization
                 if (client) {
+                    // Update client info if we got new details
+                    const updateData = {};
+                    if (!client.first_name && args.name) updateData.first_name = args.name;
+                    if (!client.email && args.email) updateData.email = args.email;
+                    
+                    if (Object.keys(updateData).length > 0) {
+                        Client.update(client.id, updateData);
+                    }
+
                     Appointment.create({
                         client_id: client.id,
                         title: `Appointment with ${args.name}`,

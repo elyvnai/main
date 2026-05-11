@@ -16,7 +16,7 @@ class RetellService {
     }
 
     getToolDefinitions() {
-        return [
+        const tools = [
             {
                 type: 'function',
                 name: 'check_availability',
@@ -58,14 +58,19 @@ class RetellService {
                     },
                     required: ['name', 'email', 'date', 'time']
                 }
-            },
-            {
+            }
+        ];
+
+        if (process.env.TRANSFER_PHONE_NUMBER) {
+            tools.push({
                 type: 'transfer_call',
                 name: 'transfer_to_human',
                 description: 'Transfer the call to a human agent for further assistance.',
                 number: process.env.TRANSFER_PHONE_NUMBER
-            }
-        ];
+            });
+        }
+
+        return tools;
     }
 
     async getCall(callId) {
