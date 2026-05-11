@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elyvn Admin Dashboard</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; line-height: 1.6; }
+        form { background: #f9f9f9; padding: 20px; border-radius: 8px; border: 1px solid #ddd; }
+        h2 { margin-top: 0; }
+        label { display: block; margin-top: 15px; font-weight: bold; }
+        input, select, button { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #007bff; color: white; border: none; margin-top: 25px; cursor: pointer; font-size: 16px; }
+        button:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <form id="createClient">
+        <h2>Create New Client</h2>
+        
+        <label>Business Name</label>
+        <input type="text" name="business_name" required>
+        
+        <label>Owner Phone (for transfers)</label>
+        <input type="tel" name="transfer_phone" placeholder="+1-555-0199" required>
+        
+        <label>Timezone</label>
+        <select name="timezone">
+            <option value="America/New_York">Eastern</option>
+            <option value="America/Chicago">Central</option>
+            <option value="America/Denver">Mountain</option>
+            <option value="America/Los_Angeles">Pacific</option>
+        </select>
+        
+        <label>Business Hours</label>
+        <input type="text" name="business_hours" value="Mon-Fri 9AM-6PM">
+        
+        <label>Cal.com Booking Link</label>
+        <input type="url" name="calcom_booking_link" placeholder="https://cal.com/...">
+        
+        <label>Cal.com Event Type ID</label>
+        <input type="text" name="calcom_event_type_id">
+        
+        <label>Cal.com API Key</label>
+        <input type="text" name="calcom_api_key_encrypted">
+        
+        <label>Twilio Phone Number</label>
+        <input type="tel" name="phone_number" placeholder="+1-555-0199" required>
+        
+        <label>Retell Agent ID</label>
+        <input type="text" name="retell_agent_id" required>
+        
+        <button type="submit">Create Client</button>
+    </form>
+
+    <script>
+        // Replace with your actual admin key or handle via secure session
+        const ADMIN_KEY = localStorage.getItem('ELYVN_ADMIN_KEY') || '';
+
+        document.getElementById('createClient').onsubmit = async (e) => {
+            e.preventDefault();
+            const form = new FormData(e.target);
+            const data = Object.fromEntries(form);
+            
+            try {
+                const res = await fetch('/api/admin/clients', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-API-Key': ADMIN_KEY 
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await res.json();
+                if (result.id) {
+                    alert(`Client created! Onboarding link:\nhttps://t.me/YOUR_BOT?start=${result.id}`);
+                } else {
+                    alert('Error: ' + (result.error || 'Unknown error'));
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Failed to connect to the server.');
+            }
+        };
+    </script>
+</body>
+</html>
