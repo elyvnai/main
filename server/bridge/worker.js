@@ -2,6 +2,7 @@ require('dotenv').config();
 const { Worker } = require('bullmq');
 const { connection } = require('./utils/queue');
 const WebhookService = require('./services/WebhookService');
+const TelegramService = require('./services/TelegramService');
 const { handleCallStarted, handleCallEnded, handleCallAnalyzed } = require('./routes/retell/calls');
 
 const worker = new Worker('webhook-events', async (job) => {
@@ -24,6 +25,9 @@ const worker = new Worker('webhook-events', async (job) => {
       }
       case 'telegram':
         await WebhookService.processTelegramWebhook(payload);
+        break;
+      case 'telegram-delayed':
+        await TelegramService.sendMessage(payload.text, payload.options);
         break;
       default:
         console.warn(`[Worker] Unknown source: ${source}`);

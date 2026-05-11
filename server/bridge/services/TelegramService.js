@@ -4,12 +4,47 @@ class TelegramService {
   constructor() {
     this.botToken = process.env.TELEGRAM_BOT_TOKEN;
     this.apiUrl = `https://api.telegram.org/bot${this.botToken}`;
+    this.rateLimit = new Map();
   }
 
   async sendMessage(text, options = {}) {
+    const chatId = options.chat_id;
+    if (!chatId) {
+      console.warn('⚠️ Telegram sendMessage: No chat_id provided');
+      return { ok: false, error: 'No chat_id provided' };
+    }
+
+    // Rate limiting logic
+    const key = `telegram:${chatId}`;
+    const now = Date.now();
+    
+    if (!this.rateLimit.has(key)) {
+      this.rateLimit.set(key, []);
+    }
+    
+    let timestamps = this.rateLimit.get(key).filter(t => now - t < 1000);
+    
+    if (timestamps.length >= 20) { // 20 msg/sec safety margin
+      try {
+        const { webhookQueue } = require('../utils/queue');
+        await webhookQueue.add('telegram-delayed', { 
+          source: 'telegram-delayed',
+          payload: { text, options } 
+        }, { delay: 1000 });
+        console.log(`[Telegram] Rate limit hit for ${chatId}, message queued with delay`);
+        return { ok: true, queued: true };
+      } catch (queueError) {
+        console.error('❌ Failed to queue delayed telegram message:', queueError.message);
+        // Fallback: try to send anyway or just fail
+      }
+    }
+    
+    timestamps.push(now);
+    this.rateLimit.set(key, timestamps);
+
     try {
       const payload = {
-        chat_id: options.chat_id,
+        chat_id: chatId,
         text,
         parse_mode: 'HTML',
         ...options
@@ -19,9 +54,13 @@ class TelegramService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      return await response.json();
+      const result = await response.json();
+      if (!result.ok) {
+        console.error('❌ Telegram sendMessage error:', result.description);
+      }
+      return result;
     } catch (error) {
-      console.error('❌ Telegram sendMessage error:', error.message);
+      console.error('❌ Telegram sendMessage exception:', error.message);
       return { ok: false, error: error.message };
     }
   }
