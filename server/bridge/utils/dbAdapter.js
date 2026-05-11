@@ -1,8 +1,7 @@
 // server/bridge/utils/dbAdapter.js
-// Singleton SQLite connection for the bridge
-
 const Database = require('better-sqlite3');
 const path = require('path');
+const fs = require('fs');
 
 const DB_PATH = process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'elyvn.db');
 
@@ -10,6 +9,12 @@ let db = null;
 
 function getDb() {
   if (!db) {
+    // Ensure the data directory exists (Railway's filesystem is ephemeral)
+    const dir = path.dirname(DB_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
     db = new Database(DB_PATH);
     db.pragma('journal_mode = WAL');
     console.log(`[DB] Connected: ${DB_PATH}`);
