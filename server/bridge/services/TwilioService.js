@@ -16,10 +16,13 @@ class TwilioService {
     return this._client;
   }
 
-  async sendSMS(to, body, clientId = null) {
+  async sendSMS(to, body, clientId = null, dbClient = null) {
+    const db = dbClient || getDb();
+    
     // Check opt-out if clientId provided
     if (clientId) {
-      const db = getDb();
+      // If dbClient is provided, it should already have the context set for RLS
+      // but we still include the where clause for extra safety and to satisfy the query
       const { rows } = await db.query('SELECT 1 FROM sms_opt_outs WHERE phone = $1 AND client_id = $2', [to, clientId]);
       if (rows.length > 0) {
         console.log(`[SMS] Blocked: ${to} is opted out for client ${clientId}`);
@@ -45,29 +48,29 @@ class TwilioService {
     }
   }
 
-  async sendFullMenuSMS(to, clientId = null) {
+  async sendFullMenuSMS(to, clientId = null, dbClient = null) {
     const body = `Hi! 👋\n\nWe missed you! Here's how to connect:\n\n📅 BOOK APPOINTMENT\n${process.env.BOOKING_LINK || 'Not configured'}\n\n⏰ OUR HOURS\n${process.env.BUSINESS_HOURS || 'Not configured'}\n\n📞 REQUEST CALLBACK\nReply CALLBACK - we'll call you within 1hr\n\n⚡ URGENT?\nReply URGENT - we'll prioritize you\n\n💬 GENERAL QUESTION?\nJust reply and we'll respond\n\nDirect: ${this.phoneNumber || 'Not configured'}\n\nReply STOP to opt out.`;
-    return this.sendSMS(to, body, clientId);
+    return this.sendSMS(to, body, clientId, dbClient);
   }
 
-  async sendCallbackConfirmation(to, clientId = null) {
+  async sendCallbackConfirmation(to, clientId = null, dbClient = null) {
     const body = `Thanks! A team member will call you back within the next hour.\n\nIf you need immediate assistance, call us at ${this.phoneNumber || 'Not configured'}.\n\nReply STOP to opt out.`;
-    return this.sendSMS(to, body, clientId);
+    return this.sendSMS(to, body, clientId, dbClient);
   }
 
-  async sendUrgentAcknowledgment(to, clientId = null) {
+  async sendUrgentAcknowledgment(to, clientId = null, dbClient = null) {
     const body = `Your request has been marked URGENT. A team member will prioritize your call and reach out immediately.\n\nFor instant help, call us at ${this.phoneNumber || 'Not configured'}.\n\nReply STOP to opt out.`;
-    return this.sendSMS(to, body, clientId);
+    return this.sendSMS(to, body, clientId, dbClient);
   }
 
-  async sendAppointmentConfirmation(to, { date, time, confirmationId }, clientId = null) {
+  async sendAppointmentConfirmation(to, { date, time, confirmationId }, clientId = null, dbClient = null) {
     const body = `📅 Appointment Confirmed!\n\nDate: ${date}\nTime: ${time}\n${confirmationId ? `Confirmation: ${confirmationId}\n` : ''}Need to reschedule? Visit: ${process.env.BOOKING_LINK || 'Not configured'}\n\nReply STOP to opt out.`;
-    return this.sendSMS(to, body, clientId);
+    return this.sendSMS(to, body, clientId, dbClient);
   }
 
-  async sendWelcomeSMS(to, clientId = null) {
+  async sendWelcomeSMS(to, clientId = null, dbClient = null) {
     const body = `Welcome! 🎉\n\nThank you for reaching out. We're here to help!\n\n📅 Book online: ${process.env.BOOKING_LINK || 'Not configured'}\n⏰ Hours: ${process.env.BUSINESS_HOURS || 'Not configured'}\n📞 Call/Text: ${this.phoneNumber || 'Not configured'}\n\nReply STOP to opt out.`;
-    return this.sendSMS(to, body, clientId);
+    return this.sendSMS(to, body, clientId, dbClient);
   }
 
   normalizePhoneNumber(phone) {

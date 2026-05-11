@@ -28,4 +28,17 @@ async function closeDb() {
   }
 }
 
-module.exports = { getDb, closeDb };
+async function withClientContext(clientId, callback) {
+  const pool = getDb();
+  const client = await pool.connect();
+  try {
+    await client.query(`SET app.current_client_id = '${clientId}'`);
+    return await callback(client);
+  } finally {
+    // Reset context before returning to pool
+    await client.query("RESET app.current_client_id").catch(() => {});
+    client.release();
+  }
+}
+
+module.exports = { getDb, closeDb, withClientContext };

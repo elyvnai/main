@@ -135,6 +135,31 @@ const MIGRATIONS = [
       await db.query(`CREATE INDEX IF NOT EXISTS idx_optouts_phone ON sms_opt_outs(phone)`);
       await db.query(`CREATE INDEX IF NOT EXISTS idx_clients_telegram ON clients(telegram_chat_id)`);
     }
+  },
+  {
+    id: '004_row_level_security',
+    apply: async (db) => {
+      const tables = ['calls', 'leads', 'messages', 'appointments', 'sms_opt_outs'];
+      
+      for (const table of tables) {
+        await db.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
+        await db.query(`DROP POLICY IF EXISTS client_isolation ON ${table}`);
+        await db.query(`
+          CREATE POLICY client_isolation ON ${table}
+          FOR ALL
+          USING (client_id::text = current_setting('app.current_client_id', true))
+        `);
+      }
+      
+      // Clients table RLS
+      await db.query(`ALTER TABLE clients ENABLE ROW LEVEL SECURITY`);
+      await db.query(`DROP POLICY IF EXISTS client_self_isolation ON clients`);
+      await db.query(`
+        CREATE POLICY client_self_isolation ON clients
+        FOR ALL
+        USING (id::text = current_setting('app.current_client_id', true))
+      `);
+    }
   }
 ];
 

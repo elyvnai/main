@@ -1,9 +1,4 @@
-const { getDb } = require('../../utils/dbAdapter');
-const TelegramService = require('../../services/TelegramService');
-
-async function handleCallback(db, chatId, data, messageId) {
-  const { rows: clients } = await db.query('SELECT * FROM clients WHERE telegram_chat_id = $1', [chatId]);
-  const client = clients[0];
+async function handleCallback(db, chatId, data, messageId, client) {
   if (!client) return 'Not linked.';
 
   if (data.startsWith('transcript_')) {
@@ -17,7 +12,7 @@ async function handleCallback(db, chatId, data, messageId) {
 
   if (data === 'quick_calls') {
     const { handleCommand } = require('./commands');
-    const result = await handleCommand(db, chatId, '/calls');
+    const result = await handleCommand(db, chatId, '/calls', null, null, client);
     return result;
   }
 

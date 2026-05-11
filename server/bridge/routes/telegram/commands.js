@@ -1,13 +1,9 @@
-const { getDb } = require('../../utils/dbAdapter');
-const TelegramService = require('../../services/TelegramService');
-const TwilioService = require('../../services/TwilioService');
 const { randomUUID } = require('crypto');
+const TwilioService = require('../../services/TwilioService');
 
-async function handleCommand(db, chatId, text, firstName, username) {
+async function handleCommand(db, chatId, text, firstName, username, client) {
   const parts = text.split(' ');
   const command = parts[0].toLowerCase();
-  const { rows: clients } = await db.query('SELECT * FROM clients WHERE telegram_chat_id = $1', [chatId]);
-  const client = clients[0];
   
   if (!client && command !== '/start') return 'Not linked. Use /start <token>';
 
@@ -50,6 +46,7 @@ async function handleCommand(db, chatId, text, firstName, username) {
 
 async function handleStart(db, chatId, token, firstName) {
   if (!token) return 'Welcome! Please use the link provided by your admin to connect your business.';
+  // Using direct pool here because we don't have a client ID yet for context
   const { rows: clients } = await db.query('SELECT * FROM clients WHERE id = $1', [token]);
   const client = clients[0];
   if (!client) return 'Invalid link. Ask your admin for a new onboarding link.';
