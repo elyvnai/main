@@ -10,6 +10,7 @@ const retellWebhook = require('./routes/webhooks/retell');
 const twilioWebhook = require('./routes/webhooks/twilio');
 const telegramWebhook = require('./routes/webhooks/telegram');
 const TelegramService = require('./services/TelegramService');
+const RetellService = require('./services/RetellService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -66,6 +67,9 @@ app.use((err, req, res, next) => {
 async function startServer() {
     try {
         await initDatabase();
+        
+        // Sync Retell Agent Prompt on startup
+        await RetellService.syncAgentPrompt();
         
         const server = http.createServer(app);
         
