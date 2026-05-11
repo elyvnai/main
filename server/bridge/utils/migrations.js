@@ -10,9 +10,9 @@ const MIGRATIONS = [
           id TEXT PRIMARY KEY,
           business_name TEXT NOT NULL,
           phone_number TEXT UNIQUE,
-          retell_agent_id TEXT,
+          retell_agent_id TEXT UNIQUE,
           transfer_phone TEXT,
-          telegram_chat_id TEXT,
+          telegram_chat_id TEXT UNIQUE,
           calcom_booking_link TEXT,
           calcom_api_key_encrypted TEXT,
           calcom_event_type_id TEXT,
@@ -40,7 +40,8 @@ const MIGRATIONS = [
           recording_url TEXT,
           recording_path TEXT,
           disconnection_reason TEXT,
-          created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+          created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+          FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
         )
       `);
 
@@ -57,7 +58,8 @@ const MIGRATIONS = [
           last_contact TEXT,
           created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
           updated_at TEXT DEFAULT (CURRENT_TIMESTAMP),
-          UNIQUE(client_id, phone)
+          UNIQUE(client_id, phone),
+          FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
         )
       `);
 
@@ -72,7 +74,9 @@ const MIGRATIONS = [
           body TEXT,
           status TEXT DEFAULT 'sent',
           message_sid TEXT,
-          created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+          created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+          FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+          FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE SET NULL
         )
       `);
 
@@ -87,7 +91,8 @@ const MIGRATIONS = [
           datetime TEXT,
           status TEXT DEFAULT 'confirmed',
           calcom_booking_id TEXT,
-          created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+          created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+          FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
         )
       `);
 
@@ -97,7 +102,8 @@ const MIGRATIONS = [
           phone TEXT NOT NULL,
           client_id TEXT NOT NULL,
           opted_out_at TEXT DEFAULT (CURRENT_TIMESTAMP),
-          UNIQUE(phone, client_id)
+          UNIQUE(phone, client_id),
+          FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
         )
       `);
 
@@ -105,21 +111,16 @@ const MIGRATIONS = [
       db.exec(`CREATE INDEX IF NOT EXISTS idx_calls_client_id ON calls(client_id)`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_calls_call_id ON calls(call_id)`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone)`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_client_phone ON messages(client_id, phone)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone)`);
     }
   }
 ];
 
 async function runMigrations() {
   const db = getDb();
-  
-  // Create migrations tracking table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS _migrations (
-      id TEXT PRIMARY KEY,
-      applied_at TEXT DEFAULT (CURRENT_TIMESTAMP)
-    )
-  `);
+  db.exec(`CREATE TABLE IF NOT EXISTS _migrations (id TEXT PRIMARY KEY, applied_at TEXT DEFAULT (CURRENT_TIMESTAMP))`);
 
   for (const migration of MIGRATIONS) {
     const exists = db.prepare('SELECT 1 FROM _migrations WHERE id = ?').get(migration.id);
@@ -130,7 +131,6 @@ async function runMigrations() {
       console.log(`Migration ${migration.id} applied.`);
     }
   }
-  
   console.log('All migrations up to date.');
 }
 
