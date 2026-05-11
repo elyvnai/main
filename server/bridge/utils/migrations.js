@@ -130,6 +130,28 @@ const MIGRATIONS = [
       `);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_webhook_events_idempotency ON webhook_events(idempotency_key)`);
     }
+  },
+  {
+    id: '003_scaling_indexes',
+    apply: (db) => {
+      // Call lookups by client (dashboard, Telegram bot)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_calls_client_id_created ON calls(client_id, created_at DESC)`);
+      
+      // Partial index for missed calls (SQLite 3.8.0+)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_calls_status_missed ON calls(status) WHERE status = 'missed'`);
+
+      // Lead lookups by phone (speed-to-lead matching)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_phone_client ON leads(phone, client_id)`);
+
+      // Message threading (two-way SMS)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_client_phone_created ON messages(client_id, phone, created_at DESC)`);
+
+      // Opt-out checks
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_optouts_phone ON sms_opt_outs(phone)`);
+
+      // Telegram chat linking
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_clients_telegram ON clients(telegram_chat_id)`);
+    }
   }
 ];
 
