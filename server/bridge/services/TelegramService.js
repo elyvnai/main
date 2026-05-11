@@ -3,16 +3,13 @@ const fetch = require('node-fetch');
 class TelegramService {
   constructor() {
     this.botToken = process.env.TELEGRAM_BOT_TOKEN;
-    this.chatId = process.env.TELEGRAM_CHAT_ID;
     this.apiUrl = `https://api.telegram.org/bot${this.botToken}`;
-    this.paused = false;
   }
 
   async sendMessage(text, options = {}) {
-    if (this.paused && !options.force) return;
     try {
       const payload = {
-        chat_id: options.chat_id || this.chatId,
+        chat_id: options.chat_id,
         text,
         parse_mode: 'HTML',
         ...options
@@ -29,11 +26,10 @@ class TelegramService {
     }
   }
 
-  async sendAudio(audioUrl, caption) {
-    if (this.paused) return;
+  async sendAudio(audioUrl, caption, chatId) {
     try {
       const payload = {
-        chat_id: this.chatId,
+        chat_id: chatId,
         audio: audioUrl,
         caption,
         parse_mode: 'HTML'
@@ -50,11 +46,10 @@ class TelegramService {
     }
   }
 
-  async sendDocument(docUrl, caption) {
-    if (this.paused) return;
+  async sendDocument(docUrl, caption, chatId) {
     try {
       const payload = {
-        chat_id: this.chatId,
+        chat_id: chatId,
         document: docUrl,
         caption,
         parse_mode: 'HTML'
@@ -71,70 +66,50 @@ class TelegramService {
     }
   }
 
-  async sendToAdmin(text, options = {}) {
-    return this.sendMessage(text, options);
-  }
-
   async sendCallNotification(call, client, type = 'ended') {
+    if (!client.ai_enabled) return;
     const emoji = type === 'started' ? '🔔' : (call.outcome === 'booked' ? '✅' : (call.status === 'missed' ? '❌' : '📞'));
     const duration = call.duration ? `${Math.floor(call.duration / 60)}m ${call.duration % 60}s` : '0s';
-    
     let text = `${emoji} <b>${type === 'started' ? 'Inbound Call' : 'Call ' + call.status.toUpperCase()}</b>\n\n`;
     text += `👤 From: ${call.caller_phone || 'Unknown'}\n`;
     if (type !== 'started') text += `⏱ Duration: ${duration}\n`;
     if (call.outcome) text += `🎯 Outcome: ${call.outcome.toUpperCase()}\n`;
     if (call.summary) text += `\n📝 <b>Summary:</b> ${call.summary}\n`;
-    
     const buttons = [];
-    if (call.transcript) {
-      buttons.push([{ text: '📄 View Transcript', callback_data: `transcript_${call.call_id}` }]);
-    }
-    if (call.recording_url) {
-      buttons.push([{ text: '🔊 Download Recording', callback_data: `recording_${call.call_id}` }]);
-    }
+    if (call.transcript) buttons.push([{ text: '📄 View Transcript', callback_data: `transcript_${call.call_id}` }]);
+    if (call.recording_url) buttons.push([{ text: '🔊 Download Recording', callback_data: `recording_${call.call_id}` }]);
     buttons.push([{ text: '💬 Reply via SMS', callback_data: `sms_reply_${call.call_id}` }]);
-
-    return this.sendMessage(text, {
-      reply_markup: { inline_keyboard: buttons },
-      chat_id: client?.telegram_chat_id || this.chatId
-    });
+    return this.sendMessage(text, { chat_id: client.telegram_chat_id, reply_markup: { inline_keyboard: buttons } });
   }
 
-  async sendAppointmentNotification({ name, email, date, time, confirmationId }, client) {
-    const text = `📅 <b>New Appointment Booked!</b>\n\n` +
-      `👤 ${name}\n` +
-      `📧 ${email}\n` +
-      `📅 ${date} at ${time}\n` +
-      `${confirmationId ? `🔖 Confirmation: ${confirmationId}\n` : ''}`;
-    return this.sendMessage(text, { chat_id: client?.telegram_chat_id || this.chatId });
+  async sendAppointmentNotification(appointment, client) {
+    if (!client.ai_enabled) return;
+    const text = `📅 <b>New Appointment Booked!</b>\n\n👤 ${appointment.name}\n📧 ${appointment.email}\n📅 ${appointment.date} at ${appointment.time}\n${appointment.confirmationId ? `🔖 Confirmation: ${appointment.confirmationId}\n` : ''}`;
+    return this.sendMessage(text, { chat_id: client.telegram_chat_id });
   }
 
   async sendTransferNotification(callId, client, reason) {
-    const text = `🚨 <b>Transfer Requested</b>\n\n` +
-      `Call ID: ${callId}\n` +
-      `Reason: ${reason}\n` +
-      `Client: ${client?.business_name || 'Unknown'}\n\n` +
-      `Please be ready to take the call.`;
-    return this.sendMessage(text, { chat_id: client?.telegram_chat_id || this.chatId });
+    if (!client.ai_enabled) return;
+    const text = `🚨 <b>Transfer Requested</b>\n\nCall ID: ${callId}\nReason: ${reason}\nClient: ${client.business_name}\n\nPlease be ready to take the call.`;
+    return this.sendMessage(text, { chat_id: client.telegram_chat_id });
   }
 
   async sendErrorAlert(error, context = 'Error') {
     const text = `❌ <b>${context}</b>\n\n<code>${error.message || error}</code>`;
-    return this.sendMessage(text, { force: true });
+    return this.sendMessage(text, { chat_id: process.env.TELEGRAM_CHAT_ID, force: true });
   }
 
   async sendSMSNotification(message, client) {
-    const text = `💬 <b>Reply from ${message.phone || 'Unknown'}</b>\n\n` +
-      `"${message.body || message.content}"\n\n` +
-      `Reply to this message to text them back.`;
+    if (!client.ai_enabled) return;
+    const text = `💬 <b>Reply from ${message.phone || 'Unknown'}</b>\n\n"${message.body || message.content}"\n\nReply to this message to text them back.`;
     return this.sendMessage(text, {
+      chat_id: client.telegram_chat_id,
       reply_markup: {
         inline_keyboard: [
           [{ text: '📞 Call them', callback_data: `call_back:${message.phone}` }],
           [{ text: '✅ Mark booked', callback_data: `mark_booked:${message.phone}` }]
         ]
-      },
-      chat_id: client?.telegram_chat_id || this.chatId
+      }
     });
   }
 }
